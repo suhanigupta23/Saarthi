@@ -4,6 +4,7 @@ import {
   Activity, ChevronLeft, ChevronRight, Bell, Plus, Trash2, CheckCircle
 } from 'lucide-react';
 import { API_BASE } from '../App.jsx';
+import shecycleWellnessImg from '../assets/shecycle-wellness.jpg';
 
 const parseLocalDate = (dateStr) => {
   if (!dateStr) return new Date();
@@ -36,9 +37,12 @@ const getDeduplicatedLogs = (rawLogs) => {
 
 function SheCycle({ isLoggedIn, onRequireAuth }) {
   const [periodDate, setPeriodDate] = useState('');
+  const [cycleLength, setCycleLength] = useState(28);
   const [logs, setLogs] = useState([]);
   const [currentPhase, setCurrentPhase] = useState('Unknown');
   const [cycleDay, setCycleDay] = useState(0);
+  const [nextPeriodDateStr, setNextPeriodDateStr] = useState('');
+  const [ovulationDateStr, setOvulationDateStr] = useState('');
   const [suggestions, setSuggestions] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -52,17 +56,19 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
   const [selectedFlow, setSelectedFlow] = useState('');
 
   // Reminders states
-  const [reminders, setReminders] = useState([
-    { id: 1, name: 'Period Prediction', date: '2026-08-06', alertText: '3 days before', color: 'bg-rose-50 text-rose-700 border-rose-200' },
-    { id: 2, name: 'Daily Vitamin Check', date: '2026-07-22', alertText: '1 day before', color: 'bg-blue-50 text-blue-700 border-blue-200' }
-  ]);
+  const [reminders, setReminders] = useState([]);
   const [showAddReminder, setShowAddReminder] = useState(false);
   const [newReminderName, setNewReminderName] = useState('');
   const [newReminderDate, setNewReminderDate] = useState('');
   const [newReminderAlert, setNewReminderAlert] = useState('3 days before');
 
   useEffect(() => {
-    // Load local logs on mount
+    // Load local period & cycle length settings
+    const savedLength = localStorage.getItem('shecycle_length');
+    if (savedLength) {
+      setCycleLength(parseInt(savedLength, 10));
+    }
+
     const savedDate = localStorage.getItem('periodStartDate');
     if (savedDate) {
       setPeriodDate(savedDate.split('T')[0]);
@@ -133,9 +139,20 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
       
       const diffTime = targetTime - activeLog.getTime();
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      const day = ((diffDays % 28) + 28) % 28 + 1;
+      const length = cycleLength || 28;
+      const day = ((diffDays % length) + length) % length + 1;
       
       setCycleDay(day);
+
+      // Dynamic calculation of next period and ovulation dates based on user's exact cycle length
+      const nextPeriodMs = activeLog.getTime() + length * 24 * 60 * 60 * 1000;
+      const ovulationMs = activeLog.getTime() + (length - 14) * 24 * 60 * 60 * 1000;
+
+      const nextDate = new Date(nextPeriodMs);
+      const ovDate = new Date(ovulationMs);
+
+      setNextPeriodDateStr(nextDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }));
+      setOvulationDateStr(ovDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }));
       
       let phase = '';
       let suggestionDetails = {};
@@ -146,19 +163,19 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
           activities: '🧘‍♀️ Low-intensity exercises like yoga, light stretching, and deep breathing meditation.',
           tip: 'Stay warm, hydrate well, and listen to your body. Avoid caffeine and excessive sugar.'
         };
-      } else if (day >= 7 && day <= 13) {
+      } else if (day >= 7 && day <= (length - 15)) {
         phase = 'Follicular Phase 🌿';
         suggestionDetails = {
           meals: '🥗 High energy foods (healthy fats like pumpkin seeds, avocados, nuts, fresh greens, and lean proteins).',
           activities: '🏃‍♀️ High-intensity cardio, running, swimming, and strength training. Your energy levels are rising!',
           tip: 'This is the perfect time to start new projects, set goals, and socialize.'
         };
-      } else if (day === 14) {
-        phase = 'Ovulation Day 🌸';
+      } else if (day >= (length - 14) && day <= (length - 13)) {
+        phase = 'Ovulation Window 🌸';
         suggestionDetails = {
           meals: '🍓 Antioxidant-rich meals (berries, citrus fruits, bell peppers, broccoli) to support egg health.',
           activities: '🏋️‍♀️ Kickboxing, intense cardio, weightlifting, and active group fitness classes.',
-          tip: 'Peak energy and communication skills. You are at your most fertile day.'
+          tip: 'Peak energy and communication skills. You are at your most fertile days.'
         };
       } else {
         phase = 'Luteal Phase 🍂';
@@ -172,7 +189,7 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
       setCurrentPhase(phase);
       setSuggestions(suggestionDetails);
     }
-  }, [selectedDate, logs]);
+  }, [selectedDate, logs, cycleLength]);
 
   const logPeriodForDate = async (dateString) => {
     const logDate = parseLocalDate(dateString);
@@ -348,41 +365,52 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
     const printWindow = window.open('', '_blank');
     const logsHtml = Object.entries(dayLogs)
       .sort((a, b) => new Date(b[0]) - new Date(a[0]))
-      .map(([date, val]) => `
-        <tr>
-          <td><strong>${new Date(date).toLocaleDateString('en-IN', { dateStyle: 'medium' })}</strong></td>
-          <td><span class="badge mood">${val.mood || 'Not Logged'}</span></td>
-          <td><span class="badge flow">${val.flow || 'None'}</span></td>
-        </tr>
-      `).join('');
+      .map(([date, val]) => {
+        // Strip emojis for professional clinical output
+        const cleanMood = (val.mood || 'Normal / Stable').replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+        const cleanFlow = (val.flow || 'None').replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+
+        return `
+          <tr>
+            <td><strong>${new Date(date).toLocaleDateString('en-IN', { dateStyle: 'medium' })}</strong></td>
+            <td><span class="badge mood">${cleanMood || 'Stable'}</span></td>
+            <td><span class="badge flow">${cleanFlow || 'None'}</span></td>
+          </tr>
+        `;
+      }).join('');
 
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Saarthi Menstrual Health Report</title>
+          <title>Saarthi Clinical Health Log Report</title>
           <style>
             body { 
-              font-family: system-ui, -apple-system, sans-serif; 
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
               padding: 40px; 
-              color: #2d3748; 
+              color: #1e293b; 
               background-color: #fff;
+              line-height: 1.5;
             }
             .header {
-              border-bottom: 2px solid #e2e8f0;
-              padding-bottom: 20px;
-              margin-bottom: 30px;
+              border-bottom: 2px solid #0f766e;
+              padding-bottom: 16px;
+              margin-bottom: 24px;
             }
-            h1 { 
-              color: #b91c1c; 
-              font-size: 26px; 
+            .header h1 { 
+              color: #0f766e; 
+              font-size: 22px; 
               font-weight: 800;
-              margin: 0 0 8px 0; 
+              margin: 0 0 6px 0; 
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
             }
-            p { 
-              font-size: 14px; 
-              color: #718096;
-              margin: 0;
+            .meta {
+              display: flex;
+              justify-content: space-between;
+              font-size: 12px;
+              color: #64748b;
+              font-weight: 600;
             }
             table { 
               width: 100%; 
@@ -390,21 +418,24 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
               margin-top: 20px; 
             }
             th, td { 
-              border: 1px solid #e2e8f0; 
-              padding: 14px; 
+              border: 1px solid #cbd5e1; 
+              padding: 10px 14px; 
               text-align: left; 
-              font-size: 14px; 
+              font-size: 13px; 
             }
             th { 
-              background-color: #f7fafc; 
+              background-color: #f1f5f9; 
               font-weight: 700; 
-              color: #4a5568;
+              color: #334155;
+              text-transform: uppercase;
+              font-size: 11px;
+              letter-spacing: 0.5px;
             }
             .badge { 
               display: inline-block; 
-              padding: 6px 12px; 
-              border-radius: 8px; 
-              font-size: 13px; 
+              padding: 4px 10px; 
+              border-radius: 6px; 
+              font-size: 12px; 
               font-weight: 700; 
             }
             .mood { 
@@ -417,25 +448,39 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
               color: #991b1b; 
               border: 1px solid #fecaca; 
             }
+            .footer {
+              margin-top: 40px;
+              padding-top: 16px;
+              border-t: 1px solid #e2e8f0;
+              font-size: 11px;
+              color: #94a3b8;
+              text-align: center;
+            }
           </style>
         </head>
         <body>
           <div class="header">
-            <h1>Saarthi - Cycle Health & Mood Report</h1>
-            <p>Generated on ${new Date().toLocaleDateString('en-IN', { dateStyle: 'long' })} | For Medical Consultation</p>
+            <h1>SAARTHI • Clinical Gynecological Cycle Log</h1>
+            <div class="meta">
+              <span>Patient Reference Log</span>
+              <span>Generated: ${new Date().toLocaleDateString('en-IN', { dateStyle: 'long' })}</span>
+            </div>
           </div>
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Mood / Feeling</th>
-                <th>Menstrual Flow</th>
+                <th>Date Logged</th>
+                <th>Logged Mood / Symptom State</th>
+                <th>Menstrual Flow Level</th>
               </tr>
             </thead>
             <tbody>
-              ${logsHtml}
+              ${logsHtml || '<tr><td colspan="3" style="text-align:center;">No daily cycle logs recorded yet.</td></tr>'}
             </tbody>
           </table>
+          <div class="footer">
+            <p>Confidential Medical Record Summary • Prepared for Gynecological Clinical Consultation</p>
+          </div>
           <script>
             window.onload = function() {
               window.print();
@@ -482,10 +527,22 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
       
-      {/* Header */}
-      <div>
-        <h2 className="font-outfit text-3xl font-black text-warm-850">SheCycle+ Menstrual Wellness</h2>
-        <p className="text-sm text-warm-500 mt-1">Monitor cycle trends, log biological indicators, and view custom wellness guidelines.</p>
+      {/* Header Banner Card with Real Image */}
+      <div className="bg-white border border-[#ECE8F5] rounded-[20px] p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xs text-left">
+        <div className="space-y-2 max-w-xl">
+          <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-[#D88AB4] bg-[#D88AB4]/10 px-3 py-1 rounded-full border border-[#D88AB4]/20">
+            🌸 Natural Women's Health & Cycle Tracking
+          </span>
+          <h2 className="font-outfit text-2xl sm:text-3xl font-black text-[#2D2A4A]">SheCycle+ Menstrual Wellness</h2>
+          <p className="text-xs sm:text-sm text-[#5F6473] leading-relaxed">
+            Monitor cycle trends, log biological indicators, and view custom natural dietary guidelines tailored to your body.
+          </p>
+        </div>
+        <img 
+          src={shecycleWellnessImg} 
+          alt="SheCycle Wellness" 
+          className="w-full md:w-72 h-44 object-cover rounded-2xl border border-[#ECE8F5] shadow-xs"
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -493,30 +550,69 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
         {/* Left Column: Date Input, Calendar Grid & Reminders */}
         <div className="space-y-6 lg:col-span-1">
           
-          {/* Log Last Period Input */}
-          <div className="bg-white rounded-2xl border border-warm-200 p-5 shadow-sm space-y-4">
-            <h3 className="font-outfit text-sm font-bold text-warm-850 uppercase tracking-wider flex items-center gap-2">
-              <CalendarIcon className="w-4 h-4 text-rose-500" />
-              <span>Log Period Start</span>
+          {/* Log Last Period & Personalize Cycle Input */}
+          <div className="bg-white rounded-[18px] border border-[#ECE8F5] p-5 shadow-xs space-y-4 text-left font-sans">
+            <h3 className="font-outfit text-sm font-bold text-[#2D2A4A] flex items-center gap-2">
+              <CalendarIcon className="w-4 h-4 text-[#D88AB4]" />
+              <span>Personalize My Cycle Parameters</span>
             </h3>
             
-            <form onSubmit={handleLogPeriod} className="flex gap-2">
-              <input 
-                type="date"
-                required
-                max={new Date().toISOString().split('T')[0]}
-                value={periodDate}
-                onChange={(e) => setPeriodDate(e.target.value)}
-                className="flex-1 px-3 py-2 rounded-xl border border-warm-200 focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs bg-white"
-              />
+            <form onSubmit={handleLogPeriod} className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-[#2D2A4A] uppercase">Last Period Start Date</label>
+                <input 
+                  type="date"
+                  required
+                  max={new Date().toISOString().split('T')[0]}
+                  value={periodDate}
+                  onChange={(e) => setPeriodDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] text-xs bg-white text-[#2D2A4A]"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-[#2D2A4A] uppercase">Average Cycle Length</label>
+                <select 
+                  value={cycleLength}
+                  onChange={(e) => {
+                    const len = parseInt(e.target.value, 10);
+                    setCycleLength(len);
+                    localStorage.setItem('shecycle_length', len);
+                  }}
+                  className="w-full px-3 py-2 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] text-xs bg-white font-bold text-[#2D2A4A]"
+                >
+                  {[...Array(20)].map((_, i) => {
+                    const days = 21 + i;
+                    return <option key={days} value={days}>{days} Days {days === 28 ? '(Standard)' : ''}</option>;
+                  })}
+                </select>
+              </div>
+
               <button 
                 type="submit"
                 disabled={loading}
-                className="px-4 py-2 bg-rose-600 text-white rounded-xl hover:bg-rose-700 font-bold text-xs transition-all shadow-sm shrink-0"
+                className="w-full py-2.5 bg-[#6D5BD0] hover:bg-[#5b4ab9] text-white rounded-xl font-bold text-xs transition-colors shadow-xs cursor-pointer"
               >
-                {loading ? 'Logging...' : 'Log'}
+                {loading ? 'Updating Calculations...' : 'Save & Calculate Predictions'}
               </button>
             </form>
+
+            {nextPeriodDateStr && (
+              <div className="p-3 bg-[#FAF8FC] rounded-xl border border-[#ECE8F5] space-y-1.5 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-[#8A8FA3] uppercase">Next Predicted Period</span>
+                  <span className="font-bold text-[#C06093] bg-[#D88AB4]/15 px-2 py-0.5 rounded-full text-[10px] border border-[#D88AB4]/30">
+                    {nextPeriodDateStr}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-[#8A8FA3] uppercase">Est. Ovulation Window</span>
+                  <span className="font-bold text-[#6D5BD0] bg-[#B6A8F8]/15 px-2 py-0.5 rounded-full text-[10px] border border-[#B6A8F8]/30">
+                    {ovulationDateStr}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Calming Custom Menstrual Calendar Grid */}

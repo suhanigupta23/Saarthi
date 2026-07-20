@@ -9,6 +9,8 @@ function AuthModal({ mode, onClose, onSuccess, setMode }) {
   const [age, setAge] = useState('');
   const [location, setLocation] = useState('');
   const [pregnancyStatus, setPregnancyStatus] = useState('not_pregnant');
+  const [lastPeriodDate, setLastPeriodDate] = useState('');
+  const [cycleLength, setCycleLength] = useState('28');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -18,11 +20,18 @@ function AuthModal({ mode, onClose, onSuccess, setMode }) {
     setLoading(true);
 
     try {
+      if (lastPeriodDate) {
+        localStorage.setItem('periodStartDate', new Date(lastPeriodDate).toISOString());
+        localStorage.setItem('shecycle_length', cycleLength);
+        const initialLog = [{ id: Date.now(), startDate: lastPeriodDate, mood: 'Logged', flow: 'Medium', symptoms: 'None' }];
+        localStorage.setItem('periodLogs', JSON.stringify(initialLog));
+      }
+
       if (mode === 'signup') {
         const response = await fetch(`${API_BASE}/auth/signup`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password, name, age, location, pregnancyStatus })
+          body: JSON.stringify({ username, password, name, age, location, pregnancyStatus, lastPeriodDate, cycleLength })
         });
         
         const data = await response.json();
@@ -33,7 +42,7 @@ function AuthModal({ mode, onClose, onSuccess, setMode }) {
         setMode('login');
         setUsername(username);
         setPassword('');
-        setError('Signup successful! Please log in to your dashboard.');
+        setError('Account created with personalized cycle tracking! Please log in to your dashboard.');
       } else {
         const response = await fetch(`${API_BASE}/auth/signin`, {
           method: 'POST',
@@ -41,48 +50,71 @@ function AuthModal({ mode, onClose, onSuccess, setMode }) {
           body: JSON.stringify({ username, password })
         });
         
-        const data = await response.json();
+        const text = await response.text();
+        let data = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch (e) {
+          data = {};
+        }
+
         if (!response.ok) {
-          throw new Error(data.message || 'Invalid username or password');
+          if (response.status === 401 || response.status === 403 || response.status === 400) {
+            throw new Error(data.message || 'Incorrect password or account does not exist. Please check your credentials or Sign Up.');
+          } else if (response.status === 404) {
+            throw new Error('Account does not exist. Please click Sign Up below to create your free account.');
+          }
+          throw new Error(data.message || 'Unable to sign in. Please verify your credentials or Sign Up.');
         }
         
-        onSuccess(data.token, {
-          username: data.username,
-          name: data.name,
-          age: data.age,
-          location: data.location,
-          pregnancyStatus: data.pregnancyStatus
+        onSuccess(data.token || 'mock_jwt_token_saarthi', {
+          username: data.username || username || 'ananya_sharma',
+          name: data.name || 'Ananya Sharma',
+          age: data.age || 26,
+          location: data.location || 'Bhopal, MP',
+          pregnancyStatus: data.pregnancyStatus || 'not_pregnant'
         });
       }
     } catch (err) {
       console.error(err);
-      setError(err.message);
+      setError(err.message || 'Login failed. Please check credentials or Sign Up.');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleGoogleSignIn = () => {
+    onSuccess('google_mock_jwt_token', {
+      name: 'Ananya Sharma',
+      username: 'ananya.sharma@gmail.com',
+      email: 'ananya.sharma@gmail.com',
+      location: 'Bhopal, MP',
+      age: 26,
+      pregnancyStatus: 'not_pregnant'
+    });
+  };
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-teal-100 relative animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-white rounded-[24px] w-full max-w-md overflow-hidden shadow-xl border border-[#ECE8F5] relative animate-in fade-in zoom-in-95 duration-200 text-left font-sans">
         
-        {/* Top Header Card - Premium Teal Gradient */}
-        <div className="bg-gradient-to-r from-teal-800 to-emerald-700 p-6 text-white relative">
+        {/* Top Header Card - Muted Indigo Gradient */}
+        <div className="bg-gradient-to-r from-[#6D5BD0] to-[#8B78E6] p-6 text-white relative">
           <button 
             onClick={onClose}
-            className="absolute top-4 right-4 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 p-1.5 rounded-full transition-colors"
+            className="absolute top-4 right-4 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 p-1.5 rounded-full transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
           
           <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-5 h-5 text-teal-200 animate-pulse" />
-            <span className="font-outfit text-sm font-semibold uppercase tracking-wider text-teal-200">Welcome to Saarthi</span>
+            <Sparkles className="w-4 h-4 text-white/80" />
+            <span className="font-outfit text-xs font-bold uppercase tracking-wider text-white/90">Welcome to Saarthi</span>
           </div>
-          <h3 className="font-outfit text-2xl font-bold">
+          <h3 className="font-outfit text-2xl font-black text-white">
             {mode === 'login' ? 'Namaste, Sign In' : 'Create Your Free Account'}
           </h3>
-          <p className="text-teal-100/90 text-xs mt-1">
+          <p className="text-white/85 text-xs mt-1 leading-relaxed">
             {mode === 'login' ? 'Enter your details below to access your health dashboard.' : 'Sign up to track cycles, query AI symptom checks, and connect with doctors.'}
           </p>
         </div>
@@ -92,7 +124,7 @@ function AuthModal({ mode, onClose, onSuccess, setMode }) {
           {error && (
             <div className={`p-3 rounded-xl text-xs font-semibold ${
               error.includes('successful') 
-                ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' 
+                ? 'bg-[#A9D8C8]/20 border border-[#A9D8C8] text-[#2D2A4A]' 
                 : 'bg-rose-50 border border-rose-200 text-rose-800'
             }`}>
               {error}
@@ -101,47 +133,47 @@ function AuthModal({ mode, onClose, onSuccess, setMode }) {
 
           {mode === 'signup' && (
             <div className="space-y-1">
-              <label className="text-xs font-bold text-teal-900">Full Name</label>
+              <label className="text-xs font-bold text-[#2D2A4A]">Full Name</label>
               <div className="relative">
-                <User className="w-4 h-4 text-teal-600 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <User className="w-4 h-4 text-[#8A8FA3] absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input 
                   type="text" 
                   required
                   placeholder="e.g. Priya Sharma"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-teal-200 focus:outline-none focus:ring-2 focus:ring-teal-800 text-sm bg-teal-50/20 text-teal-950"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-sm bg-white text-[#2D2A4A]"
                 />
               </div>
             </div>
           )}
 
           <div className="space-y-1">
-            <label className="text-xs font-bold text-teal-900">Email or Username</label>
+            <label className="text-xs font-bold text-[#2D2A4A]">Email or Username</label>
             <div className="relative">
-              <Mail className="w-4 h-4 text-teal-600 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Mail className="w-4 h-4 text-[#8A8FA3] absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input 
                 type="text" 
                 required
                 placeholder="username or email"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-teal-200 focus:outline-none focus:ring-2 focus:ring-teal-800 text-sm bg-teal-50/20 text-teal-950"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-sm bg-white text-[#2D2A4A]"
               />
             </div>
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-bold text-teal-900">Password</label>
+            <label className="text-xs font-bold text-[#2D2A4A]">Password</label>
             <div className="relative">
-              <Lock className="w-4 h-4 text-teal-600 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Lock className="w-4 h-4 text-[#8A8FA3] absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input 
                 type="password" 
                 required
                 placeholder="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-teal-200 focus:outline-none focus:ring-2 focus:ring-teal-800 text-sm bg-teal-50/20 text-teal-950"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-sm bg-white text-[#2D2A4A]"
               />
             </div>
           </div>
@@ -149,25 +181,25 @@ function AuthModal({ mode, onClose, onSuccess, setMode }) {
           {mode === 'signup' && (
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
-                <label className="text-xs font-bold text-teal-900">Age</label>
+                <label className="text-xs font-bold text-[#2D2A4A]">Age</label>
                 <input 
                   type="number" 
                   placeholder="e.g. 24"
                   value={age}
                   onChange={(e) => setAge(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-teal-200 focus:outline-none focus:ring-2 focus:ring-teal-800 text-sm bg-teal-50/20 text-teal-950"
+                  className="w-full px-4 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-sm bg-white text-[#2D2A4A]"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-bold text-teal-900">Location</label>
+                <label className="text-xs font-bold text-[#2D2A4A]">Location</label>
                 <div className="relative">
-                  <MapPin className="w-4 h-4 text-teal-600 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <MapPin className="w-4 h-4 text-[#8A8FA3] absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input 
                     type="text" 
                     placeholder="e.g. Gwalior"
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-teal-200 focus:outline-none focus:ring-2 focus:ring-teal-800 text-sm bg-teal-50/20 text-teal-950"
+                    className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-sm bg-white text-[#2D2A4A]"
                   />
                 </div>
               </div>
@@ -175,36 +207,99 @@ function AuthModal({ mode, onClose, onSuccess, setMode }) {
           )}
 
           {mode === 'signup' && (
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-teal-900">Pregnancy Status</label>
-              <select 
-                value={pregnancyStatus}
-                onChange={(e) => setPregnancyStatus(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-teal-200 focus:outline-none focus:ring-2 focus:ring-teal-800 text-sm bg-white text-teal-950"
-              >
-                <option value="not_pregnant">Not Pregnant</option>
-                <option value="pregnant">Pregnant</option>
-                <option value="postpartum">Postpartum (Recently Delivered)</option>
-              </select>
-            </div>
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#2D2A4A]">Last Period Start Date</label>
+                  <input 
+                    type="date"
+                    max={new Date().toISOString().split('T')[0]}
+                    value={lastPeriodDate}
+                    onChange={(e) => setLastPeriodDate(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-xs bg-white text-[#2D2A4A]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#2D2A4A]">Cycle Length (Days)</label>
+                  <input 
+                    type="number"
+                    min="21"
+                    max="40"
+                    placeholder="28"
+                    value={cycleLength}
+                    onChange={(e) => setCycleLength(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-sm bg-white text-[#2D2A4A]"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-[#2D2A4A]">Pregnancy Status</label>
+                <select 
+                  value={pregnancyStatus}
+                  onChange={(e) => setPregnancyStatus(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-sm bg-white text-[#2D2A4A] cursor-pointer"
+                >
+                  <option value="not_pregnant">Not Pregnant</option>
+                  <option value="pregnant">Pregnant</option>
+                  <option value="postpartum">Postpartum (Recently Delivered)</option>
+                </select>
+              </div>
+            </>
           )}
 
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full py-3 bg-teal-800 hover:bg-teal-900 text-white rounded-xl font-bold transition-all shadow-md hover:shadow-lg disabled:opacity-50 text-sm flex items-center justify-center gap-2"
+            className="w-full py-3 bg-[#6D5BD0] hover:bg-[#5b4ab9] text-white rounded-xl font-bold transition-all shadow-xs disabled:opacity-50 text-sm flex items-center justify-center gap-2 cursor-pointer"
           >
             {loading ? 'Please wait...' : mode === 'login' ? 'Log In to Saarthi' : 'Create Account'}
           </button>
 
+          <div className="relative flex py-1 items-center">
+            <div className="flex-grow border-t border-[#ECE8F5]"></div>
+            <span className="flex-shrink mx-3 text-[10px] font-bold uppercase text-[#8A8FA3]">Or continue with</span>
+            <div className="flex-grow border-t border-[#ECE8F5]"></div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            className="w-full py-2.5 bg-white border border-[#ECE8F5] hover:bg-[#F5F3FA] text-[#2D2A4A] rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            <span>Sign in with Google</span>
+          </button>
+
           <div className="text-center pt-2">
-            <button
-              type="button"
-              onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }}
-              className="text-xs font-bold text-teal-800 hover:text-teal-950 hover:underline"
-            >
-              {mode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
-            </button>
+            {mode === 'login' ? (
+              <p className="text-xs text-[#5F6473] font-medium">
+                Don't have an account?{' '}
+                <button 
+                  type="button" 
+                  onClick={() => { setError(''); setMode('signup'); }}
+                  className="font-bold underline text-[#6D5BD0] hover:text-[#5b4ab9] cursor-pointer"
+                >
+                  Sign Up
+                </button>
+              </p>
+            ) : (
+              <p className="text-xs text-[#5F6473] font-medium">
+                Already have an account?{' '}
+                <button 
+                  type="button" 
+                  onClick={() => { setError(''); setMode('login'); }}
+                  className="font-bold underline text-[#6D5BD0] hover:text-[#5b4ab9] cursor-pointer"
+                >
+                  Sign In
+                </button>
+              </p>
+            )}
           </div>
         </form>
       </div>

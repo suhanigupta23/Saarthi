@@ -1,24 +1,24 @@
 import React, { useState } from 'react';
 import { 
   HeartPulse, Stethoscope, BookOpen, ScanFace, 
-  Phone, Radar, AlertTriangle, Info, HelpCircle, X
+  Phone, Radar, AlertTriangle, Info, HelpCircle, X, CheckCircle, CheckCircle2
 } from 'lucide-react';
 import { API_BASE } from '../App.jsx';
 
 const symptomOptions = [
-  { value: "fatigue", label: "💧 Fatigue / Low Energy" },
-  { value: "irregular periods", label: "🔄 Irregular Periods / Delayed Cycle" },
-  { value: "pelvic pain", label: "⚡ Pelvic Pain" },
-  { value: "mood swings", label: "🌪️ Mood Swings" },
-  { value: "acne", label: "🌸 Acne / Skin Breakouts" },
-  { value: "bloating", label: "💨 Bloating / Swelling" },
-  { value: "hot flashes", label: "🌡️ Hot Flashes" },
-  { value: "cramps", label: "🩸 Severe Menstrual Cramps" },
-  { value: "heavy bleeding", label: "🩸 Heavy Menstrual Flow" },
-  { value: "frequent urination", label: "🚽 Frequent Urination" },
-  { value: "night sweats", label: "🛌 Night Sweats" },
-  { value: "hair thinning", label: "💇‍♀️ Hair Thinning / Loss" },
-  { value: "weight gain", label: "⚖️ Unexplained Weight Gain" }
+  { value: "fatigue", label: "Fatigue / Low Energy" },
+  { value: "irregular periods", label: "Irregular Periods / Delayed Cycle" },
+  { value: "pelvic pain", label: "Pelvic Pain" },
+  { value: "mood swings", label: "Mood Swings" },
+  { value: "acne", label: "Acne / Skin Breakouts" },
+  { value: "bloating", label: "Bloating / Swelling" },
+  { value: "hot flashes", label: "Hot Flashes" },
+  { value: "cramps", label: "Severe Menstrual Cramps" },
+  { value: "heavy bleeding", label: "Heavy Menstrual Flow" },
+  { value: "frequent urination", label: "Frequent Urination" },
+  { value: "night sweats", label: "Night Sweats" },
+  { value: "hair thinning", label: "Hair Thinning / Loss" },
+  { value: "weight gain", label: "Unexplained Weight Gain" }
 ];
 
 function SymptoScan({ onTabChange }) {
@@ -112,47 +112,48 @@ function SymptoScan({ onTabChange }) {
     };
   };
 
-  const handleSelfCareClick = async () => {
+  const handleSelfCareClick = () => {
     setShowTips(true);
-    if (tips.length === 0) {
-      setLoadingTips(true);
-      try {
-        const res = await fetch(`${API_BASE}/symptoscan/tips`);
-        const data = await res.json();
-        setTips(data.tips || []);
-      } catch (error) {
-        console.error("Failed to fetch tips:", error);
-        setTips([
-          "💧 Stay well-hydrated throughout the day.",
-          "🧘‍♀️ Practice yoga or gentle stretching for pelvic pain.",
-          "🥗 Eat a balanced diet rich in fiber and omega-3s.",
-          "😴 Get 7-9 hours of quality sleep each night."
-        ]);
-      } finally {
-        setLoadingTips(false);
-      }
+    setLoadingTips(false);
+    
+    let defaultList = [
+      "Stay well-hydrated throughout the day (2.5 to 3 liters of water).",
+      "Practice gentle pelvic stretching or yoga to relieve muscle tension.",
+      "Maintain a balanced diet rich in fiber, antioxidants, and omega-3 fatty acids.",
+      "Ensure 7 to 9 hours of quality, restorative sleep each night."
+    ];
+
+    if (result && result.home_care) {
+      defaultList.unshift(`Targeted Advice: ${result.home_care}`);
     }
+
+    setTips(defaultList);
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-300">
+    <div className="space-y-8 animate-in fade-in duration-300 text-left font-sans">
       
-      {/* Header */}
-      <div>
-        <h2 className="font-outfit text-4xl font-black text-warm-850">SymptoScan AI Check</h2>
-        <p className="text-base text-warm-600 mt-1">Select symptoms to evaluate common women's health conditions like PCOS, Fibroids, or Menstrual disruptions.</p>
+      {/* Header Banner */}
+      <div className="bg-white border border-[#ECE8F5] rounded-[20px] p-6 md:p-8 space-y-2 shadow-xs">
+        <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-[#6D5BD0] bg-[#B6A8F8]/15 px-3 py-1 rounded-full border border-[#B6A8F8]/30">
+          🤖 AI Clinical Symptom Guidance
+        </span>
+        <h2 className="font-outfit text-2xl sm:text-3xl font-black text-[#2D2A4A]">SymptoScan AI Check</h2>
+        <p className="text-xs sm:text-sm text-[#5F6473] leading-relaxed">
+          Select symptoms to evaluate common women's health conditions like PCOS, Fibroids, or Menstrual disruptions.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
         {/* Symptoms Selector */}
-        <div className="bg-white rounded-2xl border border-warm-200 p-7 shadow-sm space-y-6 transition-all duration-300">
-          <h3 className="font-outfit text-xl font-bold text-warm-800 flex items-center gap-2 border-b border-warm-100 pb-3">
-            <ScanFace className="w-5 h-5 text-blue-500" />
+        <div className="bg-white rounded-[18px] border border-[#ECE8F5] p-6 shadow-xs space-y-6">
+          <h3 className="font-outfit text-lg font-bold text-[#2D2A4A] flex items-center gap-2 border-b border-[#ECE8F5] pb-3">
+            <ScanFace className="w-5 h-5 text-[#6D5BD0]" />
             <span>Select Symptoms</span>
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {symptomOptions.map((option) => {
               const selected = selectedSymptoms.includes(option.value);
               return (
@@ -160,14 +161,14 @@ function SymptoScan({ onTabChange }) {
                   key={option.value}
                   type="button"
                   onClick={() => toggleSymptom(option.value)}
-                  className={`flex items-center justify-between px-5 py-4 rounded-xl border text-left text-base font-bold transition-all ${
+                  className={`flex items-center justify-between px-4 py-3 rounded-xl border text-left text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                     selected 
-                      ? 'bg-blue-50 border-blue-400 text-blue-900 shadow-sm ring-1 ring-blue-400' 
-                      : 'border-warm-200 text-warm-800 hover:bg-warm-100/50'
+                      ? 'bg-[#B6A8F8]/20 border-[#6D5BD0] text-[#2D2A4A] shadow-xs' 
+                      : 'border-[#ECE8F5] text-[#5F6473] hover:bg-[#F5F3FA] hover:text-[#2D2A4A]'
                   }`}
                 >
                   <span>{option.label}</span>
-                  {selected && <span className="text-sm">✅</span>}
+                  {selected && <CheckCircle className="w-4 h-4 text-[#6D5BD0]" />}
                 </button>
               );
             })}
@@ -177,7 +178,7 @@ function SymptoScan({ onTabChange }) {
             <button
               onClick={handleCheck}
               disabled={loading || selectedSymptoms.length === 0}
-              className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black transition-all shadow-md disabled:opacity-50 text-base flex items-center justify-center gap-2"
+              className="w-full py-3.5 bg-[#6D5BD0] hover:bg-[#5b4ab9] text-white rounded-xl font-bold transition-colors shadow-xs disabled:opacity-50 text-sm flex items-center justify-center gap-2 cursor-pointer"
             >
               {loading ? 'Analyzing Symptoms via Gemini AI...' : 'Analyze Symptoms'}
             </button>
@@ -192,7 +193,15 @@ function SymptoScan({ onTabChange }) {
               <span>Diagnostic Report</span>
             </h3>
 
-            {result ? (
+            {loading ? (
+              <div className="text-center py-14 space-y-4 animate-in fade-in duration-200 bg-teal-50/20 border border-teal-100/50 rounded-2xl">
+                <div className="w-10 h-10 border-4 border-teal-800 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                <div className="space-y-1">
+                  <h4 className="font-extrabold text-sm text-teal-950">Analyzing Symptoms</h4>
+                  <p className="text-xs text-teal-650 font-semibold">Generating clinical guidance via Gemini AI...</p>
+                </div>
+              </div>
+            ) : result ? (
               <div className="space-y-5 animate-in fade-in duration-200">
                 {scanModeInfo && (
                   <div className="p-3.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-sm font-bold">
@@ -294,34 +303,34 @@ function SymptoScan({ onTabChange }) {
           {showTips && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-200">
               {/* Modal Container */}
-              <div className="bg-white rounded-2xl border border-warm-200 p-7 shadow-xl space-y-5 max-w-lg w-full animate-in zoom-in-95 duration-200 text-left">
+              <div className="bg-white rounded-2xl border border-teal-100/50 p-6 shadow-xl space-y-5 max-w-lg w-full animate-in zoom-in-95 duration-200 text-left">
                 
                 {/* Header */}
-                <div className="flex justify-between items-center pb-3 border-b border-warm-150">
-                  <h4 className="font-outfit text-lg font-black text-warm-900 flex items-center gap-2">
-                    <BookOpen className="w-5.5 h-5.5 text-emerald-600" />
+                <div className="flex justify-between items-center pb-3 border-b border-teal-50">
+                  <h4 className="font-outfit text-base font-extrabold text-teal-950 flex items-center gap-2">
+                    <BookOpen className="w-5 h-5 text-teal-700" />
                     <span>Self-Care Suggestions</span>
                   </h4>
                   <button 
                     onClick={() => setShowTips(false)}
-                    className="p-1.5 hover:bg-warm-100 rounded-lg text-warm-450 hover:text-warm-700 transition-colors"
+                    className="p-1.5 hover:bg-teal-50 rounded-lg text-teal-800 transition-colors"
                   >
-                    <X className="w-5.5 h-5.5" />
+                    <X className="w-4.5 h-4.5" />
                   </button>
                 </div>
 
                 {/* Content */}
                 {loadingTips ? (
                   <div className="flex flex-col items-center justify-center py-8 space-y-3">
-                    <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-                    <p className="text-sm font-bold text-warm-550">Fetching advice...</p>
+                    <div className="w-8 h-8 border-3 border-teal-800 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="text-xs font-extrabold text-teal-750">Fetching advice...</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <ul className="text-base text-warm-850 space-y-3.5 list-none pl-0">
+                    <ul className="text-xs sm:text-sm text-teal-950 space-y-3 list-none pl-0">
                       {tips.map((tip, idx) => (
-                        <li key={idx} className="leading-relaxed flex items-start gap-3 p-3.5 rounded-xl bg-warm-50/50 border border-warm-100/60 font-semibold shadow-xs">
-                          <span className="text-lg">✨</span>
+                        <li key={idx} className="leading-relaxed flex items-start gap-2.5 p-3.5 rounded-xl bg-teal-50/25 border border-teal-100/40 font-semibold shadow-soft">
+                          <CheckCircle className="w-4 h-4 text-teal-700 shrink-0 mt-0.5" />
                           <span>{tip}</span>
                         </li>
                       ))}
@@ -333,7 +342,7 @@ function SymptoScan({ onTabChange }) {
                 <div className="flex justify-end pt-2">
                   <button
                     onClick={() => setShowTips(false)}
-                    className="bg-warm-100 hover:bg-warm-200 text-warm-850 px-5 py-2.5 rounded-xl text-sm font-extrabold transition-colors shadow-xs cursor-pointer"
+                    className="bg-teal-50 hover:bg-teal-100/50 text-teal-950 border border-teal-100 px-4 py-2 rounded-lg text-xs font-extrabold transition-colors shadow-sm cursor-pointer"
                   >
                     Close
                   </button>
