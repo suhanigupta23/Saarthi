@@ -1,0 +1,14 @@
+/target/
+/.idea/
+/.vscode/
+/HELP.md
+/mvnw
+/mvnw.cmd
+/.mvn/
+/*.class
+/*.log
+/*.lock
+
+# Exclude local environment secrets file
+.env
+.env.local

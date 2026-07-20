@@ -1,0 +1,160 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Saarthi Design System - Premium Light Teal & Mint Healthcare Theme */
+
+@layer base {
+  :root {
+    /* Core Theme Colors - Pastel Teal & Mint Palette */
+    --background: 170 30% 98%;
+    --foreground: 180 40% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 180 40% 12%;
+
+    --popover: 170 20% 95%;
+    --popover-foreground: 180 40% 12%;
+
+    /* Deep readable teal for medical primary elements */
+    --primary: 175 55% 15%;
+    --primary-foreground: 170 30% 98%;
+
+    /* Soft mint sage */
+    --secondary: 170 25% 92%;
+    --secondary-foreground: 175 55% 15%;
+
+    --muted: 170 20% 90%;
+    --muted-foreground: 175 20% 38%;
+
+    /* Rose/Coral Accent for clean alerts & tabs contrast */
+    --accent: 350 65% 62%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 170 20% 88%;
+    --input: 170 20% 90%;
+    --ring: 175 55% 15%;
+
+    --radius: 1rem;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(175, 55%, 15%), hsl(180, 45%, 22%));
+    --gradient-warm: linear-gradient(135deg, hsl(170, 30%, 94%), hsl(180, 20%, 97%));
+    --gradient-hero: linear-gradient(135deg, hsl(175, 55%, 15%) 0%, hsl(180, 45%, 22%) 50%, hsl(185, 35%, 28%) 100%);
+    
+    /* Shadows */
+    --shadow-elegant: 0 12px 35px -8px rgba(13, 148, 136, 0.12);
+    --shadow-soft: 0 4px 20px -4px rgba(13, 148, 136, 0.06);
+    --shadow-feature: 0 8px 25px -8px rgba(13, 148, 136, 0.08);
+    
+    /* Transitions */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  }
+
+  .dark {
+    --background: 180 40% 8%;
+    --foreground: 170 30% 95%;
+
+    --card: 180 40% 10%;
+    --card-foreground: 170 30% 95%;
+
+    --popover: 180 40% 10%;
+    --popover-foreground: 170 30% 95%;
+
+    --primary: 170 30% 95%;
+    --primary-foreground: 175 55% 15%;
+
+    --secondary: 175 25% 18%;
+    --secondary-foreground: 170 30% 95%;
+
+    --muted: 175 20% 15%;
+    --muted-foreground: 170 15% 65%;
+
+    --accent: 350 65% 62%;
+    --accent-foreground: 0 0% 98%;
+
+    --border: 175 15% 18%;
+    --input: 175 15% 18%;
+    --ring: 170 30% 95%;
+  }
+}
+
+@layer base {
+  html {
+    font-size: 112.5%; /* Globally scale up typography and spacings for premium clarity */
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased text-base;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-muted;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-primary rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-accent;
+  }
+}
+
+@layer components {
+  /* Button Variants */
+  .btn-hero {
+    @apply bg-gradient-to-r from-teal-700 via-teal-800 to-teal-900 text-white px-8 py-4 rounded-xl font-bold text-base shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.01] active:scale-[0.99];
+  }
+
+  .btn-elegant {
+    @apply bg-white/10 backdrop-blur-sm border border-white/20 text-white px-8 py-4 rounded-xl font-semibold hover:bg-white/20 transition-all duration-300;
+  }
+
+  .btn-feature {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90 px-6 py-2.5 rounded-lg font-bold shadow-sm transition-all duration-300 hover:-translate-y-0.5;
+  }
+
+  /* Card Variants */
+  .card-elegant {
+    @apply bg-white border border-teal-100 rounded-2xl shadow-soft hover:shadow-elegant transition-all duration-300;
+  }
+
+  .card-feature {
+    @apply bg-white border border-teal-100/70 rounded-2xl shadow-feature hover:shadow-elegant transition-all duration-300 hover:-translate-y-1;
+  }
+
+  /* Navigation Styles */
+  .nav-link {
+    @apply relative text-foreground/80 hover:text-foreground transition-colors duration-300 after:content-[''] after:absolute after:w-full after:scale-x-0 after:h-0.5 after:bottom-0 after:left-0 after:bg-primary after:origin-bottom-right after:transition-transform after:duration-300 hover:after:scale-x-100 hover:after:origin-bottom-left;
+  }
+
+  /* Page Transitions */
+  .page-transition {
+    animation: slideUpFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  @keyframes slideUpFade {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}

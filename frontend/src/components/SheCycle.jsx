@@ -1,0 +1,907 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Calendar as CalendarIcon, Heart, Apple, Dumbbell, Award, ListPlus, 
+  Activity, ChevronLeft, ChevronRight, Bell, Plus, Trash2, CheckCircle
+} from 'lucide-react';
+import { API_BASE } from '../App.jsx';
+
+const parseLocalDate = (dateStr) => {
+  if (!dateStr) return new Date();
+  const cleanStr = dateStr.split('T')[0];
+  const parts = cleanStr.split('-');
+  if (parts.length !== 3) return new Date(dateStr);
+  const [year, month, day] = parts.map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const getDeduplicatedLogs = (rawLogs) => {
+  const sorted = [...rawLogs].sort((a, b) => parseLocalDate(b.startDate) - parseLocalDate(a.startDate));
+  const deduped = [];
+  
+  for (const log of sorted) {
+    const logDate = parseLocalDate(log.startDate);
+    const isDuplicate = deduped.some(accepted => {
+      const acceptedDate = parseLocalDate(accepted.startDate);
+      const diffTime = Math.abs(logDate.getTime() - acceptedDate.getTime());
+      const diffDays = diffTime / (1000 * 60 * 60 * 24);
+      return diffDays <= 18;
+    });
+    
+    if (!isDuplicate) {
+      deduped.push(log);
+    }
+  }
+  return deduped;
+};
+
+function SheCycle({ isLoggedIn, onRequireAuth }) {
+  const [periodDate, setPeriodDate] = useState('');
+  const [logs, setLogs] = useState([]);
+  const [currentPhase, setCurrentPhase] = useState('Unknown');
+  const [cycleDay, setCycleDay] = useState(0);
+  const [suggestions, setSuggestions] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  // Calendar states
+  const [viewDate, setViewDate] = useState(new Date()); // Represents month being viewed
+  const [selectedDate, setSelectedDate] = useState(new Date()); // Day selected for details/logging
+  
+  // Custom Daily Emoji Logs
+  const [dayLogs, setDayLogs] = useState({}); // { 'yyyy-mm-dd': { mood: '😊', flow: 'Light', symptoms: 'Cramps' } }
+  const [selectedMood, setSelectedMood] = useState('');
+  const [selectedFlow, setSelectedFlow] = useState('');
+
+  // Reminders states
+  const [reminders, setReminders] = useState([
+    { id: 1, name: 'Period Prediction', date: '2026-08-06', alertText: '3 days before', color: 'bg-rose-50 text-rose-700 border-rose-200' },
+    { id: 2, name: 'Daily Vitamin Check', date: '2026-07-22', alertText: '1 day before', color: 'bg-blue-50 text-blue-700 border-blue-200' }
+  ]);
+  const [showAddReminder, setShowAddReminder] = useState(false);
+  const [newReminderName, setNewReminderName] = useState('');
+  const [newReminderDate, setNewReminderDate] = useState('');
+  const [newReminderAlert, setNewReminderAlert] = useState('3 days before');
+
+  useEffect(() => {
+    // Load local logs on mount
+    const savedDate = localStorage.getItem('periodStartDate');
+    if (savedDate) {
+      setPeriodDate(savedDate.split('T')[0]);
+    }
+
+    const savedLogs = localStorage.getItem('periodLogs');
+    if (savedLogs) {
+      const parsed = JSON.parse(savedLogs);
+      setLogs(getDeduplicatedLogs(parsed));
+    } else if (savedDate) {
+      const initialLog = [{ id: Date.now(), startDate: savedDate.split('T')[0], mood: 'Logged', flow: 'Medium', symptoms: 'None' }];
+      setLogs(initialLog);
+      localStorage.setItem('periodLogs', JSON.stringify(initialLog));
+    }
+
+    const savedDayLogs = localStorage.getItem('shecycle_day_logs');
+    if (savedDayLogs) {
+      setDayLogs(JSON.parse(savedDayLogs));
+    }
+
+    const savedReminders = localStorage.getItem('shecycle_reminders');
+    if (savedReminders) {
+      setReminders(JSON.parse(savedReminders));
+    }
+  }, []);
+
+  // Update selected mood/flow inputs when selectedDate changes
+  useEffect(() => {
+    const dateKey = getFormattedDateKey(selectedDate);
+    const existingLog = dayLogs[dateKey];
+    if (existingLog) {
+      setSelectedMood(existingLog.mood || '');
+      setSelectedFlow(existingLog.flow || '');
+    } else {
+      setSelectedMood('');
+      setSelectedFlow('');
+    }
+  }, [selectedDate, dayLogs]);
+
+  const getFormattedDateKey = (date) => {
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  useEffect(() => {
+    if (logs.length > 0) {
+      const targetTime = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate()).getTime();
+      let activeLog = null;
+      let minDiff = Infinity;
+      
+      for (const log of logs) {
+        const logStart = parseLocalDate(log.startDate);
+        const logStartZero = new Date(logStart.getFullYear(), logStart.getMonth(), logStart.getDate());
+        const diff = targetTime - logStartZero.getTime();
+        
+        if (diff >= 0 && diff < minDiff) {
+          minDiff = diff;
+          activeLog = logStartZero;
+        }
+      }
+      
+      if (!activeLog) {
+        const earliestLog = parseLocalDate(logs[logs.length - 1].startDate);
+        activeLog = new Date(earliestLog.getFullYear(), earliestLog.getMonth(), earliestLog.getDate());
+      }
+      
+      const diffTime = targetTime - activeLog.getTime();
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      const day = ((diffDays % 28) + 28) % 28 + 1;
+      
+      setCycleDay(day);
+      
+      let phase = '';
+      let suggestionDetails = {};
+      if (day >= 1 && day <= 6) {
+        phase = 'Menstrual Phase 🩸';
+        suggestionDetails = {
+          meals: '🍲 Iron-rich meals (spinach, beetroot, pomegranate, lentils) and warm chamomile tea.',
+          activities: '🧘‍♀️ Low-intensity exercises like yoga, light stretching, and deep breathing meditation.',
+          tip: 'Stay warm, hydrate well, and listen to your body. Avoid caffeine and excessive sugar.'
+        };
+      } else if (day >= 7 && day <= 13) {
+        phase = 'Follicular Phase 🌿';
+        suggestionDetails = {
+          meals: '🥗 High energy foods (healthy fats like pumpkin seeds, avocados, nuts, fresh greens, and lean proteins).',
+          activities: '🏃‍♀️ High-intensity cardio, running, swimming, and strength training. Your energy levels are rising!',
+          tip: 'This is the perfect time to start new projects, set goals, and socialize.'
+        };
+      } else if (day === 14) {
+        phase = 'Ovulation Day 🌸';
+        suggestionDetails = {
+          meals: '🍓 Antioxidant-rich meals (berries, citrus fruits, bell peppers, broccoli) to support egg health.',
+          activities: '🏋️‍♀️ Kickboxing, intense cardio, weightlifting, and active group fitness classes.',
+          tip: 'Peak energy and communication skills. You are at your most fertile day.'
+        };
+      } else {
+        phase = 'Luteal Phase 🍂';
+        suggestionDetails = {
+          meals: '🍠 Complex carbohydrates (sweet potatoes, oats, brown rice) and magnesium-rich foods (dark chocolate, bananas).',
+          activities: '🚶‍♀️ Low-impact workouts like Pilates, resistance band training, and long outdoor walks.',
+          tip: 'Curb sweet cravings with complex carbs. Practice mindfulness to ease potential PMS symptoms.'
+        };
+      }
+      
+      setCurrentPhase(phase);
+      setSuggestions(suggestionDetails);
+    }
+  }, [selectedDate, logs]);
+
+  const logPeriodForDate = async (dateString) => {
+    const logDate = parseLocalDate(dateString);
+    localStorage.setItem('periodStartDate', logDate.toISOString());
+    setViewDate(logDate);
+    setSelectedDate(logDate);
+
+    const newLog = {
+      id: Date.now(),
+      startDate: dateString,
+      mood: 'Logged',
+      flow: 'Medium',
+      symptoms: 'None'
+    };
+
+    const updatedLogs = getDeduplicatedLogs([newLog, ...logs]);
+    setLogs(updatedLogs);
+    localStorage.setItem('periodLogs', JSON.stringify(updatedLogs));
+
+    if (isLoggedIn) {
+      setLoading(true);
+      try {
+        const token = localStorage.getItem('saarthi_token');
+        if (token) {
+          await fetch(`${API_BASE}/cycle/log`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              startDate: dateString,
+              mood: 'Good',
+              flow: 'Medium',
+              symptoms: 'None'
+            })
+          });
+        }
+      } catch (err) {
+        console.warn("Could not sync with database server: ", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleLogPeriod = (e) => {
+    e.preventDefault();
+    if (!periodDate) return;
+    logPeriodForDate(periodDate);
+  };
+
+  // Calendar Day Classification
+  const getCyclePhaseForDate = (date) => {
+    if (logs.length === 0) return null;
+    
+    const targetTime = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    
+    // Find the most recent period log that started on or before targetTime
+    let activeLog = null;
+    let minDiff = Infinity;
+    
+    for (const log of logs) {
+      const logStart = parseLocalDate(log.startDate);
+      const logStartZero = new Date(logStart.getFullYear(), logStart.getMonth(), logStart.getDate());
+      const diff = targetTime - logStartZero.getTime();
+      
+      if (diff >= 0 && diff < minDiff) {
+        minDiff = diff;
+        activeLog = logStartZero;
+      }
+    }
+    
+    // If no past log is found, use the earliest log as baseline and project backward
+    if (!activeLog) {
+      const earliestLog = parseLocalDate(logs[logs.length - 1].startDate);
+      activeLog = new Date(earliestLog.getFullYear(), earliestLog.getMonth(), earliestLog.getDate());
+    }
+    
+    const diffTime = targetTime - activeLog.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    
+    // cDay represents day of the 28-day cycle
+    const cDay = ((diffDays % 28) + 28) % 28 + 1;
+    const isFuturePrediction = diffDays >= 28;
+    
+    if (cDay >= 1 && cDay <= 6) {
+      if (isFuturePrediction) {
+        return { phase: 'next', label: 'Next Period Prediction', icon: '🩸', color: 'bg-pink-100/60 text-pink-900 border-pink-300 border-dashed' };
+      }
+      if (diffDays < 0) {
+        return { phase: 'previous', label: 'Previous Period', icon: '🩸', color: 'bg-amber-100/70 text-amber-900 border-amber-300' };
+      }
+      return { phase: 'period', label: 'Current Period', icon: '🩸', color: 'bg-rose-100 text-rose-900 border-rose-300' };
+    } else if (cDay >= 7 && cDay <= 10) {
+      return { phase: 'follicular', label: 'Follicular Phase', icon: '🌿', color: 'bg-purple-100/70 text-purple-900 border-purple-300' };
+    } else if (cDay === 14) {
+      return { phase: 'ovulation', label: 'Ovulation', icon: '☀️', color: 'bg-blue-100 text-blue-900 border-blue-300' };
+    } else if ((cDay >= 11 && cDay <= 13) || (cDay >= 15 && cDay <= 17)) {
+      return { phase: 'fertile', label: 'Fertile Window', icon: '🌱', color: 'bg-emerald-100 text-emerald-950 border-emerald-300' };
+    } else if (cDay >= 18 && cDay <= 28) {
+      return { phase: 'luteal', label: 'Luteal Phase', icon: '🍂', color: 'bg-orange-100/70 text-orange-900 border-orange-300' };
+    }
+    return null;
+  };
+
+  // Generate Calendar Month Grid
+  const getDaysInMonthGrid = () => {
+    const year = viewDate.getFullYear();
+    const month = viewDate.getMonth();
+    
+    const firstDayIndex = new Date(year, month, 1).getDay(); // Weekday index for first day
+    const totalDays = new Date(year, month + 1, 0).getDate(); // Total days in month
+    
+    const grid = [];
+    // Empty starting padding
+    for (let i = 0; i < firstDayIndex; i++) {
+      grid.push(null);
+    }
+    // Days
+    for (let day = 1; day <= totalDays; day++) {
+      grid.push(new Date(year, month, day));
+    }
+    return grid;
+  };
+
+  const handlePrevMonth = () => {
+    setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1));
+  };
+
+  const handleNextMonth = () => {
+    setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1));
+  };
+
+  // Daily Emoji logger save
+  const handleSaveDayLog = (mood, flow) => {
+    if (!isLoggedIn) {
+      onRequireAuth();
+      return;
+    }
+    const dateKey = getFormattedDateKey(selectedDate);
+    const updated = {
+      ...dayLogs,
+      [dateKey]: {
+        mood: mood || selectedMood,
+        flow: flow || selectedFlow
+      }
+    };
+    setDayLogs(updated);
+    localStorage.setItem('shecycle_day_logs', JSON.stringify(updated));
+  };
+
+  const handleSaveDayLogForButton = () => {
+    if (!isLoggedIn) {
+      onRequireAuth();
+      return;
+    }
+    if (!selectedMood && !selectedFlow) return;
+
+    const dateKey = getFormattedDateKey(selectedDate);
+    const updated = {
+      ...dayLogs,
+      [dateKey]: {
+        mood: selectedMood,
+        flow: selectedFlow
+      }
+    };
+    setDayLogs(updated);
+    localStorage.setItem('shecycle_day_logs', JSON.stringify(updated));
+  };
+
+  const handleDownloadHistory = () => {
+    const printWindow = window.open('', '_blank');
+    const logsHtml = Object.entries(dayLogs)
+      .sort((a, b) => new Date(b[0]) - new Date(a[0]))
+      .map(([date, val]) => `
+        <tr>
+          <td><strong>${new Date(date).toLocaleDateString('en-IN', { dateStyle: 'medium' })}</strong></td>
+          <td><span class="badge mood">${val.mood || 'Not Logged'}</span></td>
+          <td><span class="badge flow">${val.flow || 'None'}</span></td>
+        </tr>
+      `).join('');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Saarthi Menstrual Health Report</title>
+          <style>
+            body { 
+              font-family: system-ui, -apple-system, sans-serif; 
+              padding: 40px; 
+              color: #2d3748; 
+              background-color: #fff;
+            }
+            .header {
+              border-bottom: 2px solid #e2e8f0;
+              padding-bottom: 20px;
+              margin-bottom: 30px;
+            }
+            h1 { 
+              color: #b91c1c; 
+              font-size: 26px; 
+              font-weight: 800;
+              margin: 0 0 8px 0; 
+            }
+            p { 
+              font-size: 14px; 
+              color: #718096;
+              margin: 0;
+            }
+            table { 
+              width: 100%; 
+              border-collapse: collapse; 
+              margin-top: 20px; 
+            }
+            th, td { 
+              border: 1px solid #e2e8f0; 
+              padding: 14px; 
+              text-align: left; 
+              font-size: 14px; 
+            }
+            th { 
+              background-color: #f7fafc; 
+              font-weight: 700; 
+              color: #4a5568;
+            }
+            .badge { 
+              display: inline-block; 
+              padding: 6px 12px; 
+              border-radius: 8px; 
+              font-size: 13px; 
+              font-weight: 700; 
+            }
+            .mood { 
+              background-color: #f0fdf4; 
+              color: #166534; 
+              border: 1px solid #bbf7d0; 
+            }
+            .flow { 
+              background-color: #fef2f2; 
+              color: #991b1b; 
+              border: 1px solid #fecaca; 
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Saarthi - Cycle Health & Mood Report</h1>
+            <p>Generated on ${new Date().toLocaleDateString('en-IN', { dateStyle: 'long' })} | For Medical Consultation</p>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Mood / Feeling</th>
+                <th>Menstrual Flow</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${logsHtml}
+            </tbody>
+          </table>
+          <script>
+            window.onload = function() {
+              window.print();
+            }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // Add custom reminder
+  const handleAddReminderSubmit = (e) => {
+    e.preventDefault();
+    if (!newReminderName || !newReminderDate) return;
+    
+    const newRem = {
+      id: Date.now(),
+      name: newReminderName,
+      date: newReminderDate,
+      alertText: newReminderAlert,
+      color: 'bg-teal-50 text-teal-700 border-teal-200'
+    };
+
+    const updated = [...reminders, newRem];
+    setReminders(updated);
+    localStorage.setItem('shecycle_reminders', JSON.stringify(updated));
+
+    // Reset inputs
+    setNewReminderName('');
+    setNewReminderDate('');
+    setShowAddReminder(false);
+  };
+
+  const handleDeleteReminder = (id) => {
+    const updated = reminders.filter(rem => rem.id !== id);
+    setReminders(updated);
+    localStorage.setItem('shecycle_reminders', JSON.stringify(updated));
+  };
+
+  const gridDays = getDaysInMonthGrid();
+  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-300">
+      
+      {/* Header */}
+      <div>
+        <h2 className="font-outfit text-3xl font-black text-warm-850">SheCycle+ Menstrual Wellness</h2>
+        <p className="text-sm text-warm-500 mt-1">Monitor cycle trends, log biological indicators, and view custom wellness guidelines.</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* Left Column: Date Input, Calendar Grid & Reminders */}
+        <div className="space-y-6 lg:col-span-1">
+          
+          {/* Log Last Period Input */}
+          <div className="bg-white rounded-2xl border border-warm-200 p-5 shadow-sm space-y-4">
+            <h3 className="font-outfit text-sm font-bold text-warm-850 uppercase tracking-wider flex items-center gap-2">
+              <CalendarIcon className="w-4 h-4 text-rose-500" />
+              <span>Log Period Start</span>
+            </h3>
+            
+            <form onSubmit={handleLogPeriod} className="flex gap-2">
+              <input 
+                type="date"
+                required
+                max={new Date().toISOString().split('T')[0]}
+                value={periodDate}
+                onChange={(e) => setPeriodDate(e.target.value)}
+                className="flex-1 px-3 py-2 rounded-xl border border-warm-200 focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs bg-white"
+              />
+              <button 
+                type="submit"
+                disabled={loading}
+                className="px-4 py-2 bg-rose-600 text-white rounded-xl hover:bg-rose-700 font-bold text-xs transition-all shadow-sm shrink-0"
+              >
+                {loading ? 'Logging...' : 'Log'}
+              </button>
+            </form>
+          </div>
+
+          {/* Calming Custom Menstrual Calendar Grid */}
+          <div className="bg-white rounded-2xl border border-warm-200 p-5 shadow-sm space-y-4">
+            
+            {/* Calendar Controls */}
+            <div className="flex justify-between items-center pb-2">
+              <h3 className="font-outfit text-sm font-bold text-warm-850 uppercase tracking-wider">
+                {viewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </h3>
+              <div className="flex gap-1">
+                <button 
+                  onClick={handlePrevMonth}
+                  className="p-1.5 rounded-lg border border-warm-200 hover:bg-warm-50 text-warm-600 transition-all"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={handleNextMonth}
+                  className="p-1.5 rounded-lg border border-warm-200 hover:bg-warm-50 text-warm-600 transition-all"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Cycle Legend Badges */}
+            <div className="flex flex-wrap gap-1.5 text-[9px] font-bold pb-2 border-b border-warm-100 justify-start">
+              <span className="px-2 py-1 rounded bg-rose-100 text-rose-900 border border-rose-200 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>Menstrual (1-6)
+              </span>
+              <span className="px-2 py-1 rounded bg-purple-100 text-purple-900 border border-purple-200 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>Follicular (7-10)
+              </span>
+              <span className="px-2 py-1 rounded bg-emerald-100 text-emerald-950 border border-emerald-200 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Fertile (11-17)
+              </span>
+              <span className="px-2 py-1 rounded bg-blue-100 text-blue-900 border border-blue-200 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>Ovulation (14)
+              </span>
+              <span className="px-2 py-1 rounded bg-orange-100 text-orange-900 border border-orange-200 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-orange-400"></span>Luteal (18-28)
+              </span>
+              <span className="px-2 py-1 rounded bg-pink-100 text-pink-900 border border-pink-200 border-dashed flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-pink-400"></span>Next Prediction
+              </span>
+              <span className="px-2 py-1 rounded bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Previous
+              </span>
+            </div>
+
+            {/* Weekdays header */}
+            <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-warm-400">
+              {weekDays.map(day => (
+                <div key={day} className="py-1">{day}</div>
+              ))}
+            </div>
+
+            {/* Days grid */}
+            <div className="grid grid-cols-7 gap-1 text-center text-xs">
+              {gridDays.map((date, idx) => {
+                if (!date) {
+                  return <div key={`empty-${idx}`} className="aspect-square"></div>;
+                }
+
+                const dayNum = date.getDate();
+                const isSelected = selectedDate && selectedDate.toDateString() === date.toDateString();
+                const phaseInfo = getCyclePhaseForDate(date);
+                
+                let cellClass = "aspect-square rounded-xl border border-warm-100 flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-warm-50 relative ";
+                if (phaseInfo) {
+                  cellClass += `${phaseInfo.color} font-bold `;
+                } else {
+                  cellClass += "bg-white text-warm-800 ";
+                }
+                if (isSelected) {
+                  cellClass += "ring-2 ring-teal-600 ring-offset-1 ";
+                }
+
+                return (
+                  <button 
+                    key={`day-${dayNum}`}
+                    type="button"
+                    onClick={() => setSelectedDate(date)}
+                    className={cellClass}
+                  >
+                    <span>{dayNum}</span>
+                    {phaseInfo && (
+                      <span className="text-[8px] absolute bottom-1 leading-none">{phaseInfo.icon}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+          </div>
+
+          {/* Daily Symptoms History Card */}
+          <div className="bg-white rounded-2xl border border-warm-200 p-5 shadow-sm space-y-4">
+            <div className="flex justify-between items-center pb-2 border-b border-warm-100">
+              <h3 className="font-outfit text-sm font-bold text-warm-850 uppercase tracking-wider flex items-center gap-2">
+                <Heart className="w-4 h-4 text-rose-500" />
+                <span>Daily Logs History</span>
+              </h3>
+            </div>
+            
+            {Object.keys(dayLogs).length > 0 ? (
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {Object.entries(dayLogs).sort((a, b) => new Date(b[0]) - new Date(a[0])).map(([dateStr, log]) => (
+                  <div key={dateStr} className="p-3 rounded-xl bg-warm-50/50 border border-warm-100 flex justify-between items-center text-xs font-semibold">
+                    <span className="text-warm-700 font-bold">{new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                    <div className="flex items-center gap-2">
+                      {log.mood && <span className="px-2 py-0.5 rounded-lg bg-teal-50 text-teal-700 border border-teal-200">{log.mood}</span>}
+                      {log.flow && <span className="px-2 py-0.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200">🩸 {log.flow}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-warm-450 text-center py-2">No daily mood or flow logs saved yet.</p>
+            )}
+
+            {Object.keys(dayLogs).length > 0 && (
+              <button
+                onClick={handleDownloadHistory}
+                className="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-extrabold text-xs shadow-sm transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span>Download Mood & Flow History</span>
+              </button>
+            )}
+          </div>
+
+        </div>
+
+        {/* Right Column: Dynamic Suggestions, Daily Logger, Reminders & History */}
+        <div className="lg:col-span-2 space-y-6">
+          
+          {/* Phase Banner */}
+          {suggestions ? (
+            <div className="bg-white rounded-2xl border border-warm-200 p-6 shadow-sm space-y-6">
+              <div className="flex items-center justify-between border-b border-warm-100 pb-4">
+                <div>
+                  <span className="text-xs font-bold text-warm-500 uppercase">Current Menstrual Phase</span>
+                  <h3 className="text-2xl font-black text-rose-600 mt-1">{currentPhase}</h3>
+                </div>
+                <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center font-outfit font-black">
+                  D{cycleDay}
+                </div>
+              </div>
+
+              {/* Suggestions Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                {/* Meal Suggestion */}
+                <div className="space-y-3 text-left">
+                  <div className="flex items-center gap-2 text-brand-700 font-bold">
+                    <Apple className="w-5 h-5" />
+                    <span>Nutrition & Meals</span>
+                  </div>
+                  <p className="text-sm text-warm-600 leading-relaxed bg-brand-50/40 p-4 rounded-xl border border-brand-100">
+                    {suggestions.meals}
+                  </p>
+                </div>
+
+                {/* Workout Suggestion */}
+                <div className="space-y-3 text-left">
+                  <div className="flex items-center gap-2 text-rose-600 font-bold">
+                    <Dumbbell className="w-5 h-5" />
+                    <span>Workouts & Activity</span>
+                  </div>
+                  <p className="text-sm text-warm-600 leading-relaxed bg-rose-50/40 p-4 rounded-xl border border-rose-100">
+                    {suggestions.activities}
+                  </p>
+                </div>
+
+              </div>
+
+              {/* Tips banner */}
+              <div className="flex gap-3 bg-warm-100/60 p-4 rounded-xl border border-warm-200/60 text-xs text-warm-600 items-start text-left">
+                <Activity className="w-4 h-4 mt-0.5 text-brand-700 shrink-0" />
+                <p className="leading-relaxed">
+                  <strong>Saarthi Doctor Insight:</strong> {suggestions.tip}
+                </p>
+              </div>
+
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-warm-200 p-8 shadow-sm text-center flex flex-col items-center justify-center space-y-4 min-h-[300px]">
+              <div className="w-16 h-16 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center text-2xl">
+                🩸
+              </div>
+              <div>
+                <h4 className="text-lg font-bold text-warm-800">No Period Log Detected</h4>
+                <p className="text-sm text-warm-500 mt-1 max-w-sm mx-auto">Please enter the start date of your last period on the left side menu to see predictions and meal plans.</p>
+              </div>
+            </div>
+          )}
+
+          {/* Daily Logger & Reminders side-by-side grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            {/* Daily Emoji & Symptoms Logger */}
+            <div className="bg-white rounded-2xl border border-warm-200 p-5 shadow-sm space-y-4 text-left">
+              <h3 className="font-outfit text-sm font-bold text-warm-850 uppercase tracking-wider flex items-center gap-2">
+                <Activity className="w-4 h-4 text-teal-600" />
+                <span>Log For: {selectedDate.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}</span>
+              </h3>
+
+              <button
+                onClick={handleSaveDayLogForButton}
+                className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-xs shadow-sm transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                Log for the Day
+              </button>
+
+              <div className="border-t border-warm-100 my-2"></div>
+
+              {/* Mood Emojis Selection */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-warm-400 uppercase tracking-wider">How do you feel?</label>
+                <div className="flex gap-2 justify-between">
+                  {[
+                    { emoji: '😊', label: 'Happy' },
+                    { emoji: '😔', label: 'Sad / PMS' },
+                    { emoji: '🥱', label: 'Tired' },
+                    { emoji: '😡', label: 'Crampy' },
+                    { emoji: '🤢', label: 'Bloated' }
+                  ].map((item) => (
+                    <button
+                      key={item.emoji}
+                      onClick={() => setSelectedMood(item.emoji)}
+                      title={item.label}
+                      className={`w-10 h-10 rounded-xl text-lg flex items-center justify-center border transition-all ${
+                        selectedMood === item.emoji 
+                          ? 'border-teal-500 bg-teal-50 shadow-sm ring-1 ring-teal-500' 
+                          : 'border-warm-200 hover:bg-warm-50'
+                      }`}
+                    >
+                      {item.emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Menstrual Flow Level */}
+              <div className="space-y-2 pt-2">
+                <label className="text-[10px] font-bold text-warm-400 uppercase tracking-wider">Flow Level</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['Light', 'Medium', 'Heavy'].map((flow) => (
+                    <button
+                      key={flow}
+                      onClick={() => setSelectedFlow(flow)}
+                      className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                        selectedFlow === flow 
+                          ? 'border-rose-500 bg-rose-50 text-rose-700' 
+                          : 'border-warm-200 text-warm-650 hover:bg-warm-50'
+                      }`}
+                    >
+                      🩸 {flow}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Reminders Card */}
+            <div className="bg-white rounded-2xl border border-warm-200 p-5 shadow-sm space-y-4 text-left">
+              <div className="flex justify-between items-center">
+                <h3 className="font-outfit text-sm font-bold text-warm-850 uppercase tracking-wider flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-blue-500" />
+                  <span>Reminders</span>
+                </h3>
+                <button 
+                  onClick={() => setShowAddReminder(!showAddReminder)}
+                  className="p-1 rounded-lg hover:bg-warm-100 text-warm-600 transition-all border border-warm-200"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Add Reminder Form Drawer */}
+              {showAddReminder && (
+                <form onSubmit={handleAddReminderSubmit} className="p-4 rounded-xl border border-teal-100 bg-teal-50/30 space-y-3 animate-in slide-in-from-top duration-250">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-teal-800 uppercase">Reminder Title</label>
+                    <input 
+                      type="text"
+                      placeholder="e.g. Period Prediction"
+                      required
+                      value={newReminderName}
+                      onChange={(e) => setNewReminderName(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-warm-200 focus:outline-none focus:ring-1 focus:ring-teal-500 text-xs bg-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-teal-800 uppercase">Target Date</label>
+                    <input 
+                      type="date"
+                      required
+                      value={newReminderDate}
+                      onChange={(e) => setNewReminderDate(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-warm-200 focus:outline-none focus:ring-1 focus:ring-teal-500 text-xs bg-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-teal-800 uppercase">Alert Time</label>
+                    <select 
+                      value={newReminderAlert}
+                      onChange={(e) => setNewReminderAlert(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-warm-200 focus:outline-none focus:ring-1 focus:ring-teal-500 text-xs bg-white"
+                    >
+                      <option value="1 day before">1 day before</option>
+                      <option value="3 days before">3 days before</option>
+                      <option value="5 days before">5 days before</option>
+                    </select>
+                  </div>
+                  <button 
+                    type="submit"
+                    className="w-full py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-xs font-bold transition-all shadow-sm"
+                  >
+                    Save Reminder
+                  </button>
+                </form>
+              )}
+
+              {/* Reminders List */}
+              <div className="space-y-2">
+                {reminders.map((rem) => (
+                  <div key={rem.id} className={`p-3 rounded-xl border flex justify-between items-center ${rem.color} shadow-sm`}>
+                    <div>
+                      <h5 className="font-extrabold text-xs">{rem.name}</h5>
+                      <p className="text-[9px] opacity-75 mt-0.5">{new Date(rem.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[8px] font-bold px-2 py-0.5 rounded-full border border-current">
+                        {rem.alertText}
+                      </span>
+                      <button 
+                        onClick={() => handleDeleteReminder(rem.id)}
+                        className="p-1 rounded-lg hover:bg-black/5 text-current transition-all"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+            </div>
+
+          </div>
+
+          {/* Logs History */}
+          <div className="bg-white rounded-2xl border border-warm-200 p-6 shadow-sm space-y-4">
+            <h3 className="font-outfit text-base font-bold text-warm-850 text-left">Cycle Logging History</h3>
+            {logs.length > 0 ? (
+              <div className="divide-y divide-warm-100">
+                {logs.map((log) => (
+                  <div key={log.id} className="py-3 flex justify-between items-center text-sm">
+                    <div className="flex items-center gap-3 text-left">
+                      <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
+                        🩸
+                      </div>
+                      <div>
+                        <p className="font-semibold text-warm-800">{new Date(log.startDate).toLocaleDateString('en-IN', { dateStyle: 'long' })}</p>
+                        <p className="text-xs text-warm-400">Regular Cycle Length: 28 Days</p>
+                      </div>
+                    </div>
+                    <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
+                      Logged Successfully
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-warm-400 text-center py-4">No cycle logs saved. Complete logging above to build pattern tracking history.</p>
+            )}
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+export default SheCycle;
