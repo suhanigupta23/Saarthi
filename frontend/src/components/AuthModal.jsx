@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Lock, Mail, User, Shield, MapPin, Sparkles } from 'lucide-react';
+import { X, Lock, Mail, User, Shield, MapPin, Sparkles, Calendar } from 'lucide-react';
 import { API_BASE } from '../App.jsx';
 
 function AuthModal({ mode, onClose, onSuccess, setMode }) {
@@ -9,8 +9,12 @@ function AuthModal({ mode, onClose, onSuccess, setMode }) {
   const [age, setAge] = useState('');
   const [location, setLocation] = useState('');
   const [pregnancyStatus, setPregnancyStatus] = useState('not_pregnant');
+  
+  // Custom period setup states for new users
   const [lastPeriodDate, setLastPeriodDate] = useState('');
   const [cycleLength, setCycleLength] = useState('28');
+  const [periodDuration, setPeriodDuration] = useState('5');
+
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -20,18 +24,11 @@ function AuthModal({ mode, onClose, onSuccess, setMode }) {
     setLoading(true);
 
     try {
-      if (lastPeriodDate) {
-        localStorage.setItem('periodStartDate', new Date(lastPeriodDate).toISOString());
-        localStorage.setItem('shecycle_length', cycleLength);
-        const initialLog = [{ id: Date.now(), startDate: lastPeriodDate, mood: 'Logged', flow: 'Medium', symptoms: 'None' }];
-        localStorage.setItem('periodLogs', JSON.stringify(initialLog));
-      }
-
       if (mode === 'signup') {
         const response = await fetch(`${API_BASE}/auth/signup`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password, name, age, location, pregnancyStatus, lastPeriodDate, cycleLength })
+          body: JSON.stringify({ username, password, name, age, location, pregnancyStatus })
         });
         
         const data = await response.json();
@@ -39,10 +36,19 @@ function AuthModal({ mode, onClose, onSuccess, setMode }) {
           throw new Error(data.message || 'Signup failed');
         }
         
+        // Store real period start date & cycle length for new user
+        if (lastPeriodDate) {
+          localStorage.setItem('periodStartDate', lastPeriodDate);
+          localStorage.setItem('periodCycleLength', cycleLength || '28');
+          localStorage.setItem('periodDuration', periodDuration || '5');
+          const newLog = [{ id: Date.now(), startDate: lastPeriodDate, mood: 'Logged', flow: 'Medium', symptoms: 'None' }];
+          localStorage.setItem('periodLogs', JSON.stringify(newLog));
+        }
+
         setMode('login');
         setUsername(username);
         setPassword('');
-        setError('Account created with personalized cycle tracking! Please log in to your dashboard.');
+        setError('Account created successfully with your custom cycle profile! Please log in below.');
       } else {
         const response = await fetch(`${API_BASE}/auth/signin`, {
           method: 'POST',
@@ -208,31 +214,6 @@ function AuthModal({ mode, onClose, onSuccess, setMode }) {
 
           {mode === 'signup' && (
             <>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#2D2A4A]">Last Period Start Date</label>
-                  <input 
-                    type="date"
-                    max={new Date().toISOString().split('T')[0]}
-                    value={lastPeriodDate}
-                    onChange={(e) => setLastPeriodDate(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-xs bg-white text-[#2D2A4A]"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#2D2A4A]">Cycle Length (Days)</label>
-                  <input 
-                    type="number"
-                    min="21"
-                    max="40"
-                    placeholder="28"
-                    value={cycleLength}
-                    onChange={(e) => setCycleLength(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-sm bg-white text-[#2D2A4A]"
-                  />
-                </div>
-              </div>
-
               <div className="space-y-1">
                 <label className="text-xs font-bold text-[#2D2A4A]">Pregnancy Status</label>
                 <select 
@@ -244,6 +225,55 @@ function AuthModal({ mode, onClose, onSuccess, setMode }) {
                   <option value="pregnant">Pregnant</option>
                   <option value="postpartum">Postpartum (Recently Delivered)</option>
                 </select>
+              </div>
+
+              {/* Dynamic Period Tracking Setup for New User */}
+              <div className="space-y-3 p-3.5 bg-[#FAF8FC] rounded-2xl border border-[#ECE8F5] text-left">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-[#6D5BD0]">
+                  <Calendar className="w-4 h-4 text-[#6D5BD0]" />
+                  <span>Cycle & Period Setup (AI Predictions)</span>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#2D2A4A]">Last Period Start Date *</label>
+                  <input 
+                    type="date" 
+                    required={mode === 'signup'}
+                    value={lastPeriodDate}
+                    onChange={(e) => setLastPeriodDate(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] text-sm bg-white text-[#2D2A4A]"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-[#2D2A4A]">Avg Cycle (Days)</label>
+                    <input 
+                      type="number" 
+                      required={mode === 'signup'}
+                      min="20"
+                      max="45"
+                      value={cycleLength}
+                      onChange={(e) => setCycleLength(e.target.value)}
+                      placeholder="28"
+                      className="w-full px-3.5 py-2 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] text-sm bg-white text-[#2D2A4A]"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-[#2D2A4A]">Period Length (Days)</label>
+                    <input 
+                      type="number" 
+                      required={mode === 'signup'}
+                      min="2"
+                      max="10"
+                      value={periodDuration}
+                      onChange={(e) => setPeriodDuration(e.target.value)}
+                      placeholder="5"
+                      className="w-full px-3.5 py-2 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] text-sm bg-white text-[#2D2A4A]"
+                    />
+                  </div>
+                </div>
               </div>
             </>
           )}

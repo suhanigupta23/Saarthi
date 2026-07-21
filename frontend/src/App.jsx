@@ -756,7 +756,7 @@ function App() {
                     {activeTab === 'symptom' && <SymptoScan isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} onTabChange={setActiveTab} />}
                     {activeTab === 'gynconnect' && <GynConnect isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
                     {activeTab === 'profile' && <UserProfile user={user} onUpdateUser={setUser} />}
-                    {activeTab === 'vault' && <MediVault isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
+                    {activeTab === 'vault' && <MediVault isLoggedIn={isLoggedIn} user={user} onRequireAuth={handleRequireAuth} />}
                     {activeTab === 'yojana' && <HealthYojana isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
                     {activeTab === 'ngo' && <NGOHeal isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
                     {activeTab === 'chat' && <CareCircle isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
@@ -773,7 +773,7 @@ function App() {
                         {activeTab === 'cycle' && <SheCycle isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
                         {activeTab === 'symptom' && <SymptoScan isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} onTabChange={setActiveTab} />}
                         {activeTab === 'gynconnect' && <GynConnect isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
-                        {activeTab === 'vault' && <MediVault isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
+                        {activeTab === 'vault' && <MediVault isLoggedIn={isLoggedIn} user={user} onRequireAuth={handleRequireAuth} />}
                         {activeTab === 'yojana' && <HealthYojana isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
                         {activeTab === 'ngo' && <NGOHeal isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
                         {activeTab === 'chat' && <CareCircle isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}

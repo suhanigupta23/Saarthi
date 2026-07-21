@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, Heart, Apple, Dumbbell, Award, ListPlus, 
-  Activity, ChevronLeft, ChevronRight, Bell, Plus, Trash2, CheckCircle
+  Activity, ChevronLeft, ChevronRight, Bell, Plus, Trash2, CheckCircle, X
 } from 'lucide-react';
 import { API_BASE } from '../App.jsx';
 import shecycleWellnessImg from '../assets/shecycle-wellness.jpg';
@@ -38,13 +38,18 @@ const getDeduplicatedLogs = (rawLogs) => {
 function SheCycle({ isLoggedIn, onRequireAuth }) {
   const [periodDate, setPeriodDate] = useState('');
   const [cycleLength, setCycleLength] = useState(28);
+  const [periodDuration, setPeriodDuration] = useState(5);
   const [logs, setLogs] = useState([]);
   const [currentPhase, setCurrentPhase] = useState('Unknown');
   const [cycleDay, setCycleDay] = useState(0);
-  const [nextPeriodDateStr, setNextPeriodDateStr] = useState('');
-  const [ovulationDateStr, setOvulationDateStr] = useState('');
   const [suggestions, setSuggestions] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  // Cycle Configuration Modal States
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [editStartDate, setEditStartDate] = useState('');
+  const [editCycleLength, setEditCycleLength] = useState('28');
+  const [editPeriodDuration, setEditPeriodDuration] = useState('5');
 
   // Calendar states
   const [viewDate, setViewDate] = useState(new Date()); // Represents month being viewed
@@ -56,22 +61,40 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
   const [selectedFlow, setSelectedFlow] = useState('');
 
   // Reminders states
-  const [reminders, setReminders] = useState([]);
+  const [reminders, setReminders] = useState([
+    { id: 1, name: 'Period Prediction', date: '2026-08-06', alertText: '3 days before', color: 'bg-rose-50 text-rose-700 border-rose-200' },
+    { id: 2, name: 'Daily Vitamin Check', date: '2026-07-22', alertText: '1 day before', color: 'bg-blue-50 text-blue-700 border-blue-200' }
+  ]);
   const [showAddReminder, setShowAddReminder] = useState(false);
   const [newReminderName, setNewReminderName] = useState('');
   const [newReminderDate, setNewReminderDate] = useState('');
   const [newReminderAlert, setNewReminderAlert] = useState('3 days before');
 
   useEffect(() => {
-    // Load local period & cycle length settings
-    const savedLength = localStorage.getItem('shecycle_length');
-    if (savedLength) {
-      setCycleLength(parseInt(savedLength, 10));
-    }
-
+    // Load local logs and custom cycle parameters on mount
     const savedDate = localStorage.getItem('periodStartDate');
     if (savedDate) {
-      setPeriodDate(savedDate.split('T')[0]);
+      const clean = savedDate.split('T')[0];
+      setPeriodDate(clean);
+      setEditStartDate(clean);
+    } else {
+      const today = new Date().toISOString().split('T')[0];
+      setPeriodDate(today);
+      setEditStartDate(today);
+    }
+
+    const savedLength = localStorage.getItem('periodCycleLength');
+    if (savedLength) {
+      const len = parseInt(savedLength) || 28;
+      setCycleLength(len);
+      setEditCycleLength(String(len));
+    }
+
+    const savedDuration = localStorage.getItem('periodDuration');
+    if (savedDuration) {
+      const dur = parseInt(savedDuration) || 5;
+      setPeriodDuration(dur);
+      setEditPeriodDuration(String(dur));
     }
 
     const savedLogs = localStorage.getItem('periodLogs');
@@ -115,6 +138,60 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
     return `${yyyy}-${mm}-${dd}`;
   };
 
+  const handleSaveCycleProfile = (e) => {
+    e.preventDefault();
+    if (!editStartDate) return;
+
+    const len = parseInt(editCycleLength) || 28;
+    const dur = parseInt(editPeriodDuration) || 5;
+
+    setPeriodDate(editStartDate);
+    setCycleLength(len);
+    setPeriodDuration(dur);
+
+    localStorage.setItem('periodStartDate', editStartDate);
+    localStorage.setItem('periodCycleLength', String(len));
+    localStorage.setItem('periodDuration', String(dur));
+
+    const newLog = { id: Date.now(), startDate: editStartDate, mood: 'Logged', flow: 'Medium', symptoms: 'None' };
+    const updated = getDeduplicatedLogs([newLog, ...logs]);
+    setLogs(updated);
+    localStorage.setItem('periodLogs', JSON.stringify(updated));
+
+    setShowConfigModal(false);
+  };
+
+  // Dynamically calculate predicted events based on user's actual chosen cycle parameters
+  const getPredictedEvents = () => {
+    if (!periodDate && logs.length === 0) return null;
+    const lastStart = logs.length > 0 ? parseLocalDate(logs[0].startDate) : parseLocalDate(periodDate);
+    
+    const nextPeriod = new Date(lastStart);
+    nextPeriod.setDate(nextPeriod.getDate() + cycleLength);
+
+    const ovulationDayOffset = Math.round(cycleLength / 2);
+    const ovulationDate = new Date(lastStart);
+    ovulationDate.setDate(ovulationDate.getDate() + ovulationDayOffset);
+
+    const fertileStart = new Date(ovulationDate);
+    fertileStart.setDate(fertileStart.getDate() - 3);
+
+    const fertileEnd = new Date(ovulationDate);
+    fertileEnd.setDate(fertileEnd.getDate() + 2);
+
+    const todayZero = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+    const nextZero = new Date(nextPeriod.getFullYear(), nextPeriod.getMonth(), nextPeriod.getDate());
+    const diffDays = Math.ceil((nextZero.getTime() - todayZero.getTime()) / (1000 * 60 * 60 * 24));
+
+    return {
+      lastPeriodStr: lastStart.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+      nextPeriodStr: nextPeriod.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+      ovulationStr: ovulationDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+      fertileWindowStr: `${fertileStart.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${fertileEnd.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`,
+      daysRemaining: diffDays
+    };
+  };
+
   useEffect(() => {
     if (logs.length > 0) {
       const targetTime = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate()).getTime();
@@ -139,43 +216,33 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
       
       const diffTime = targetTime - activeLog.getTime();
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      const length = cycleLength || 28;
-      const day = ((diffDays % length) + length) % length + 1;
+      const day = ((diffDays % cycleLength) + cycleLength) % cycleLength + 1;
+      const ovulationDay = Math.round(cycleLength / 2);
       
       setCycleDay(day);
-
-      // Dynamic calculation of next period and ovulation dates based on user's exact cycle length
-      const nextPeriodMs = activeLog.getTime() + length * 24 * 60 * 60 * 1000;
-      const ovulationMs = activeLog.getTime() + (length - 14) * 24 * 60 * 60 * 1000;
-
-      const nextDate = new Date(nextPeriodMs);
-      const ovDate = new Date(ovulationMs);
-
-      setNextPeriodDateStr(nextDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }));
-      setOvulationDateStr(ovDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }));
       
       let phase = '';
       let suggestionDetails = {};
-      if (day >= 1 && day <= 6) {
+      if (day >= 1 && day <= periodDuration) {
         phase = 'Menstrual Phase 🩸';
         suggestionDetails = {
           meals: '🍲 Iron-rich meals (spinach, beetroot, pomegranate, lentils) and warm chamomile tea.',
           activities: '🧘‍♀️ Low-intensity exercises like yoga, light stretching, and deep breathing meditation.',
           tip: 'Stay warm, hydrate well, and listen to your body. Avoid caffeine and excessive sugar.'
         };
-      } else if (day >= 7 && day <= (length - 15)) {
+      } else if (day > periodDuration && day < ovulationDay) {
         phase = 'Follicular Phase 🌿';
         suggestionDetails = {
           meals: '🥗 High energy foods (healthy fats like pumpkin seeds, avocados, nuts, fresh greens, and lean proteins).',
           activities: '🏃‍♀️ High-intensity cardio, running, swimming, and strength training. Your energy levels are rising!',
           tip: 'This is the perfect time to start new projects, set goals, and socialize.'
         };
-      } else if (day >= (length - 14) && day <= (length - 13)) {
-        phase = 'Ovulation Window 🌸';
+      } else if (day === ovulationDay) {
+        phase = 'Ovulation Day 🌸';
         suggestionDetails = {
           meals: '🍓 Antioxidant-rich meals (berries, citrus fruits, bell peppers, broccoli) to support egg health.',
           activities: '🏋️‍♀️ Kickboxing, intense cardio, weightlifting, and active group fitness classes.',
-          tip: 'Peak energy and communication skills. You are at your most fertile days.'
+          tip: 'Peak energy and communication skills. You are at your most fertile day.'
         };
       } else {
         phase = 'Luteal Phase 🍂';
@@ -189,7 +256,7 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
       setCurrentPhase(phase);
       setSuggestions(suggestionDetails);
     }
-  }, [selectedDate, logs, cycleLength]);
+  }, [selectedDate, logs, cycleLength, periodDuration]);
 
   const logPeriodForDate = async (dateString) => {
     const logDate = parseLocalDate(dateString);
@@ -545,74 +612,89 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
         />
       </div>
 
+      {/* Dynamic AI Period & Ovulation Prediction Summary Banner */}
+      {(() => {
+        const pred = getPredictedEvents();
+        if (!pred) return null;
+        return (
+          <div className="bg-[#FAF8FC] border border-[#ECE8F5] rounded-[20px] p-6 shadow-xs text-left grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
+            <div className="space-y-1 md:col-span-1 border-b md:border-b-0 md:border-r border-[#ECE8F5] pb-3 md:pb-0 md:pr-4">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#C06093] bg-[#D88AB4]/15 px-2.5 py-0.5 rounded-full">
+                🩸 Next Predicted Period
+              </span>
+              <h4 className="font-outfit text-xl font-black text-[#2D2A4A]">{pred.nextPeriodStr}</h4>
+              <p className="text-xs font-bold text-[#6D5BD0]">
+                {pred.daysRemaining > 0 ? `In approx. ${pred.daysRemaining} days` : pred.daysRemaining === 0 ? 'Today!' : 'Period expected'}
+              </p>
+            </div>
+
+            <div className="space-y-1 md:col-span-1 border-b md:border-b-0 md:border-r border-[#ECE8F5] pb-3 md:pb-0 md:pr-4">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#3B826E] bg-[#A9D8C8]/20 px-2.5 py-0.5 rounded-full">
+                🌸 Estimated Ovulation
+              </span>
+              <h4 className="font-outfit text-base font-extrabold text-[#2D2A4A]">{pred.ovulationStr}</h4>
+              <p className="text-[11px] text-[#5F6473]">Peak fertile day of cycle</p>
+            </div>
+
+            <div className="space-y-1 md:col-span-1 border-b md:border-b-0 md:border-r border-[#ECE8F5] pb-3 md:pb-0 md:pr-4">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#8B6B38] bg-[#F3E8D6]/50 px-2.5 py-0.5 rounded-full">
+                🌱 Fertile Window
+              </span>
+              <h4 className="font-outfit text-xs font-bold text-[#2D2A4A]">{pred.fertileWindowStr}</h4>
+              <p className="text-[11px] text-[#5F6473]">High chance of conception</p>
+            </div>
+
+            <div className="md:col-span-1 flex flex-col justify-center gap-2">
+              <button
+                onClick={() => setShowConfigModal(true)}
+                className="w-full py-2.5 px-4 bg-[#6D5BD0] hover:bg-[#5b4ab9] text-white rounded-xl font-bold text-xs shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <CalendarIcon className="w-3.5 h-3.5" />
+                <span>Change Cycle Profile</span>
+              </button>
+              <span className="text-[10px] text-[#8A8FA3] text-center">Customized for your body</span>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         {/* Left Column: Date Input, Calendar Grid & Reminders */}
         <div className="space-y-6 lg:col-span-1">
           
-          {/* Log Last Period & Personalize Cycle Input */}
+          {/* Log Last Period Input */}
           <div className="bg-white rounded-[18px] border border-[#ECE8F5] p-5 shadow-xs space-y-4 text-left font-sans">
-            <h3 className="font-outfit text-sm font-bold text-[#2D2A4A] flex items-center gap-2">
-              <CalendarIcon className="w-4 h-4 text-[#D88AB4]" />
-              <span>Personalize My Cycle Parameters</span>
-            </h3>
+            <div className="flex justify-between items-center pb-2 border-b border-[#ECE8F5]">
+              <h3 className="font-outfit text-xs font-bold text-[#2D2A4A] uppercase tracking-wider flex items-center gap-2">
+                <CalendarIcon className="w-4 h-4 text-[#6D5BD0]" />
+                <span>Log Period Start</span>
+              </h3>
+              <button
+                onClick={() => setShowConfigModal(true)}
+                className="text-[10px] font-bold text-[#6D5BD0] hover:underline cursor-pointer"
+              >
+                Setup Cycle
+              </button>
+            </div>
             
-            <form onSubmit={handleLogPeriod} className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-[#2D2A4A] uppercase">Last Period Start Date</label>
-                <input 
-                  type="date"
-                  required
-                  max={new Date().toISOString().split('T')[0]}
-                  value={periodDate}
-                  onChange={(e) => setPeriodDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] text-xs bg-white text-[#2D2A4A]"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-[#2D2A4A] uppercase">Average Cycle Length</label>
-                <select 
-                  value={cycleLength}
-                  onChange={(e) => {
-                    const len = parseInt(e.target.value, 10);
-                    setCycleLength(len);
-                    localStorage.setItem('shecycle_length', len);
-                  }}
-                  className="w-full px-3 py-2 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] text-xs bg-white font-bold text-[#2D2A4A]"
-                >
-                  {[...Array(20)].map((_, i) => {
-                    const days = 21 + i;
-                    return <option key={days} value={days}>{days} Days {days === 28 ? '(Standard)' : ''}</option>;
-                  })}
-                </select>
-              </div>
-
+            <form onSubmit={handleLogPeriod} className="flex gap-2">
+              <input 
+                type="date"
+                required
+                max={new Date().toISOString().split('T')[0]}
+                value={periodDate}
+                onChange={(e) => setPeriodDate(e.target.value)}
+                className="flex-1 px-3 py-2 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] text-xs bg-white text-[#2D2A4A]"
+              />
               <button 
                 type="submit"
                 disabled={loading}
-                className="w-full py-2.5 bg-[#6D5BD0] hover:bg-[#5b4ab9] text-white rounded-xl font-bold text-xs transition-colors shadow-xs cursor-pointer"
+                className="px-4 py-2 bg-[#6D5BD0] hover:bg-[#5b4ab9] text-white rounded-xl font-bold text-xs transition-colors shadow-xs shrink-0 cursor-pointer"
               >
-                {loading ? 'Updating Calculations...' : 'Save & Calculate Predictions'}
+                {loading ? 'Logging...' : 'Log'}
               </button>
             </form>
-
-            {nextPeriodDateStr && (
-              <div className="p-3 bg-[#FAF8FC] rounded-xl border border-[#ECE8F5] space-y-1.5 text-xs">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold text-[#8A8FA3] uppercase">Next Predicted Period</span>
-                  <span className="font-bold text-[#C06093] bg-[#D88AB4]/15 px-2 py-0.5 rounded-full text-[10px] border border-[#D88AB4]/30">
-                    {nextPeriodDateStr}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold text-[#8A8FA3] uppercase">Est. Ovulation Window</span>
-                  <span className="font-bold text-[#6D5BD0] bg-[#B6A8F8]/15 px-2 py-0.5 rounded-full text-[10px] border border-[#B6A8F8]/30">
-                    {ovulationDateStr}
-                  </span>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Calming Custom Menstrual Calendar Grid */}
@@ -995,6 +1077,91 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
         </div>
 
       </div>
+
+      {/* Dynamic Cycle Parameters Setup Modal */}
+      {showConfigModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-[24px] border border-[#ECE8F5] p-6 shadow-xl max-w-md w-full animate-in zoom-in-95 duration-200 text-left font-sans space-y-4">
+            
+            <div className="flex justify-between items-center pb-2 border-b border-[#ECE8F5]">
+              <div>
+                <h4 className="font-outfit text-base font-black text-[#2D2A4A]">Custom Cycle & Period Setup</h4>
+                <p className="text-xs text-[#5F6473]">Configure your real period dates for dynamic predictions</p>
+              </div>
+              <button 
+                onClick={() => setShowConfigModal(false)}
+                className="p-1 hover:bg-[#F5F3FA] rounded-full text-[#2D2A4A] transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCycleProfile} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-[#2D2A4A]">Last Period Start Date *</label>
+                <input 
+                  type="date"
+                  required
+                  value={editStartDate}
+                  onChange={(e) => setEditStartDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] text-xs bg-white text-[#2D2A4A]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#2D2A4A]">Average Cycle (Days)</label>
+                  <input 
+                    type="number"
+                    required
+                    min="20"
+                    max="45"
+                    value={editCycleLength}
+                    onChange={(e) => setEditCycleLength(e.target.value)}
+                    placeholder="28"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] text-xs bg-white text-[#2D2A4A]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#2D2A4A]">Period Length (Days)</label>
+                  <input 
+                    type="number"
+                    required
+                    min="2"
+                    max="10"
+                    value={editPeriodDuration}
+                    onChange={(e) => setEditPeriodDuration(e.target.value)}
+                    placeholder="5"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] text-xs bg-white text-[#2D2A4A]"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-[#FAF8FC] text-[#2D2A4A] rounded-xl text-[11px] font-normal leading-relaxed border border-[#ECE8F5]">
+                💡 Your predictions for future period dates, ovulation, and fertile windows update dynamically based on your custom dates.
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button 
+                  type="button"
+                  onClick={() => setShowConfigModal(false)}
+                  className="px-4 py-2 rounded-xl bg-[#F5F3FA] text-[#2D2A4A] text-xs font-bold hover:bg-[#ECE8F5] transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="px-5 py-2 bg-[#6D5BD0] hover:bg-[#5b4ab9] text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                >
+                  Save Profile & Predict
+                </button>
+              </div>
+            </form>
+
+          </div>
+        </div>
+      )}
 
     </div>
   );

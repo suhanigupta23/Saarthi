@@ -1,17 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Database, FileText, UploadCloud, Trash2, CheckCircle, 
-  Calculator, Info, Share2, Link, Copy, Check, X, TrendingUp, Activity, Calendar, ExternalLink
+  Calculator, Info, Share2, Link, Copy, Check, X, TrendingUp, Activity, Calendar, ExternalLink, RefreshCw
 } from 'lucide-react';
+import { API_BASE } from '../App.jsx';
 
-function MediVault({ isLoggedIn, onRequireAuth }) {
-  const [records, setRecords] = useState(() => {
-    const saved = localStorage.getItem('medivault_records');
-    return saved ? JSON.parse(saved) : [
-      { id: 1, name: "Dr. Sharma Prescription.pdf", size: "1.2 MB", date: "2026-07-02", type: "Prescription" },
-      { id: 2, name: "Lab Report Blood Analysis.png", size: "450 KB", date: "2026-06-25", type: "Lab Report" }
-    ];
-  });
+function MediVault({ isLoggedIn, user, onRequireAuth }) {
+  const [records, setRecords] = useState([]);
 
   const [consultations] = useState([
     { id: 'APT-9402', doctor: 'Dr. Smita Jain', specialty: 'Maternity Psychologist', date: '12 July 2026', status: 'Completed' },
@@ -19,17 +14,14 @@ function MediVault({ isLoggedIn, onRequireAuth }) {
   ]);
   
   // Vitals Evaluator & Dynamic Personalised Trend Graph States
-  const [vitalsTrend, setVitalsTrend] = useState(() => {
-    const saved = localStorage.getItem('medivault_vitals');
-    return saved ? JSON.parse(saved) : [
-      { month: 'Jan', sys: 118, dia: 78, sugar: 92, weight: 58 },
-      { month: 'Feb', sys: 120, dia: 80, sugar: 95, weight: 58.5 },
-      { month: 'Mar', sys: 122, dia: 81, sugar: 88, weight: 59 },
-      { month: 'Apr', sys: 119, dia: 79, sugar: 91, weight: 59.2 },
-      { month: 'May', sys: 121, dia: 80, sugar: 94, weight: 60 },
-      { month: 'Jun', sys: 120, dia: 78, sugar: 90, weight: 60 }
-    ];
-  });
+  const [vitalsTrend, setVitalsTrend] = useState([
+    { month: 'Jan', sys: 118, dia: 78, sugar: 92, weight: 58 },
+    { month: 'Feb', sys: 120, dia: 80, sugar: 95, weight: 58.5 },
+    { month: 'Mar', sys: 122, dia: 81, sugar: 88, weight: 59 },
+    { month: 'Apr', sys: 119, dia: 79, sugar: 91, weight: 59.2 },
+    { month: 'May', sys: 121, dia: 80, sugar: 94, weight: 60 },
+    { month: 'Jun', sys: 120, dia: 78, sugar: 90, weight: 60 }
+  ]);
 
   const [vitalTab, setVitalTab] = useState('bp'); // 'bp' or 'bmi'
   const [systolic, setSystolic] = useState('');
@@ -45,6 +37,76 @@ function MediVault({ isLoggedIn, onRequireAuth }) {
   const [selectedShareDoc, setSelectedShareDoc] = useState(null);
   const [copied, setCopied] = useState(false);
 
+  const userKey = user?.username ? `_${user.username}` : '';
+
+  // Load user records & vitals trend on mount or user login
+  useEffect(() => {
+    const userRecordsKey = `saarthi_medivault_records${userKey}`;
+    const savedRecords = localStorage.getItem(userRecordsKey) || localStorage.getItem('saarthi_medivault_records');
+    if (savedRecords) {
+      try {
+        setRecords(JSON.parse(savedRecords));
+      } catch (e) {
+        setRecords([]);
+      }
+    } else {
+      // Demo defaults for initial preview
+      const defaultDocs = [
+        { id: 1, name: "Dr. Sharma Prescription.pdf", size: "1.2 MB", date: "2026-07-02", type: "Prescription" },
+        { id: 2, name: "Lab Report Blood Analysis.png", size: "450 KB", date: "2026-06-25", type: "Lab Report" }
+      ];
+      setRecords(defaultDocs);
+      localStorage.setItem('saarthi_medivault_records', JSON.stringify(defaultDocs));
+      if (userKey) localStorage.setItem(userRecordsKey, JSON.stringify(defaultDocs));
+    }
+
+    const userVitalsKey = `saarthi_vitals_trend${userKey}`;
+    const savedVitals = localStorage.getItem(userVitalsKey) || localStorage.getItem('saarthi_vitals_trend');
+    if (savedVitals) {
+      try {
+        setVitalsTrend(JSON.parse(savedVitals));
+      } catch (e) {}
+    }
+
+    // DB Fetch Vitals History
+    const fetchDbVitals = async () => {
+      const token = localStorage.getItem('saarthi_token');
+      if (token && isLoggedIn) {
+        try {
+          const res = await fetch(`${API_BASE}/vitals/history`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const dbLogs = await res.json();
+            if (Array.isArray(dbLogs) && dbLogs.length > 0) {
+              const formattedTrend = dbLogs.map(log => ({
+                month: log.monthLabel || 'Log',
+                sys: log.systolic || 120,
+                dia: log.diastolic || 80,
+                sugar: log.bloodSugar || 90,
+                weight: log.weight || 60
+              }));
+              setVitalsTrend(formattedTrend);
+              localStorage.setItem('saarthi_vitals_trend', JSON.stringify(formattedTrend));
+              if (userKey) localStorage.setItem(userVitalsKey, JSON.stringify(formattedTrend));
+            }
+          }
+        } catch (e) {
+          console.warn("Using offline vitals cache: ", e);
+        }
+      }
+    };
+    fetchDbVitals();
+  }, [userKey, isLoggedIn]);
+
+  const saveRecordsToStorage = (updated) => {
+    setRecords(updated);
+    localStorage.setItem('saarthi_medivault_records', JSON.stringify(updated));
+    if (userKey) {
+      localStorage.setItem(`saarthi_medivault_records${userKey}`, JSON.stringify(updated));
+    }
+  };
+
   const handleUpload = (e) => {
     if (!isLoggedIn) {
       onRequireAuth();
@@ -59,9 +121,7 @@ function MediVault({ isLoggedIn, onRequireAuth }) {
         date: new Date().toISOString().split('T')[0],
         type: file.name.toLowerCase().includes('report') ? 'Lab Report' : 'Prescription'
       };
-      const updated = [newRecord, ...records];
-      setRecords(updated);
-      localStorage.setItem('medivault_records', JSON.stringify(updated));
+      saveRecordsToStorage([newRecord, ...records]);
     }
   };
 
@@ -70,9 +130,12 @@ function MediVault({ isLoggedIn, onRequireAuth }) {
       onRequireAuth();
       return;
     }
-    const updated = records.filter(r => r.id !== id);
-    setRecords(updated);
-    localStorage.setItem('medivault_records', JSON.stringify(updated));
+    const filtered = records.filter(r => r.id !== id);
+    saveRecordsToStorage(filtered);
+  };
+
+  const clearAllVaultRecords = () => {
+    saveRecordsToStorage([]);
   };
 
   // Accurate AHA 2017 BP Classifier with Low BP / Hypotension Check
@@ -82,17 +145,28 @@ function MediVault({ isLoggedIn, onRequireAuth }) {
     const dia = parseInt(diastolic);
     
     // Update personalized graph dynamically with user reading
-    setVitalsTrend(prev => {
-      const updated = [...prev];
-      updated[updated.length - 1] = {
-        ...updated[updated.length - 1],
-        month: 'Jul (Now)',
-        sys: sys,
-        dia: dia
-      };
-      localStorage.setItem('medivault_vitals', JSON.stringify(updated));
-      return updated;
-    });
+    const updated = [...vitalsTrend];
+    updated[updated.length - 1] = {
+      ...updated[updated.length - 1],
+      month: 'Jul (Now)',
+      sys: sys,
+      dia: dia
+    };
+    setVitalsTrend(updated);
+    localStorage.setItem('saarthi_vitals_trend', JSON.stringify(updated));
+    if (userKey) {
+      localStorage.setItem(`saarthi_vitals_trend${userKey}`, JSON.stringify(updated));
+    }
+
+    // Sync Vitals Log into Database
+    const token = localStorage.getItem('saarthi_token');
+    if (token && isLoggedIn) {
+      fetch(`${API_BASE}/vitals/log`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ systolic: sys, diastolic: dia, category: 'Blood Pressure', monthLabel: 'Jul (Now)' })
+      }).catch(err => console.warn("Vitals DB save warning: ", err));
+    }
 
     if (sys < 90 || dia < 60) {
       setBpResult({
@@ -144,16 +218,27 @@ function MediVault({ isLoggedIn, onRequireAuth }) {
     const bmi = (w / (h * h)).toFixed(1);
 
     // Update weight on dynamic graph
-    setVitalsTrend(prev => {
-      const updated = [...prev];
-      updated[updated.length - 1] = {
-        ...updated[updated.length - 1],
-        month: 'Jul (Now)',
-        weight: w
-      };
-      localStorage.setItem('medivault_vitals', JSON.stringify(updated));
-      return updated;
-    });
+    const updated = [...vitalsTrend];
+    updated[updated.length - 1] = {
+      ...updated[updated.length - 1],
+      month: 'Jul (Now)',
+      weight: w
+    };
+    setVitalsTrend(updated);
+    localStorage.setItem('saarthi_vitals_trend', JSON.stringify(updated));
+    if (userKey) {
+      localStorage.setItem(`saarthi_vitals_trend${userKey}`, JSON.stringify(updated));
+    }
+
+    // Sync Vitals Log into Database
+    const token = localStorage.getItem('saarthi_token');
+    if (token && isLoggedIn) {
+      fetch(`${API_BASE}/vitals/log`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ weight: w, height: parseFloat(height), bmi: parseFloat(bmi), category: 'BMI Evaluation', monthLabel: 'Jul (Now)' })
+      }).catch(err => console.warn("Vitals DB save warning: ", err));
+    }
 
     let category = '';
     let badgeClass = '';
@@ -356,7 +441,18 @@ function MediVault({ isLoggedIn, onRequireAuth }) {
 
             {/* List of files */}
             <div className="space-y-3">
-              <h4 className="text-[10px] font-bold text-[#8A8FA3] uppercase tracking-wider">My Encrypted Documents</h4>
+              <div className="flex justify-between items-center">
+                <h4 className="text-[10px] font-bold text-[#8A8FA3] uppercase tracking-wider">My Encrypted Documents ({records.length})</h4>
+                {records.length > 0 && (
+                  <button
+                    onClick={clearAllVaultRecords}
+                    className="text-[10px] text-rose-600 hover:text-rose-800 font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Clear Sample Files & Start Fresh</span>
+                  </button>
+                )}
+              </div>
               {records.length > 0 ? (
                 <div className="divide-y divide-[#ECE8F5] border border-[#ECE8F5] rounded-xl px-4 bg-white">
                   {records.map(record => (

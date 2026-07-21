@@ -82,19 +82,28 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
   };
 
   const handleConfirmPayment = async (method) => {
+    const matchedDoc = doctors.find(d => d.name === paymentModalData.doctorName);
+    const appointmentRef = `APT-${Math.floor(1000 + Math.random() * 9000)}-${(matchedDoc?.city || 'BHOPAL').toUpperCase()}`;
+    const docName = paymentModalData.doctorName;
+    const docSpec = matchedDoc?.speciality || 'Gynecologist';
+    const clinic = matchedDoc?.clinic || 'Saarthi Telehealth Clinic';
+    const feeAmt = paymentModalData.amount;
+    const apptStatus = method === 'upi' ? 'Paid via UPI QR 🟢' : 'Paid via Stripe 🟢';
+    const dateStr = new Date().toLocaleDateString('en-IN', { dateStyle: 'medium' });
+
+    // 1. Save locally for immediate offline UI speed
     try {
       const savedAppts = localStorage.getItem('saarthi_appointments');
       const appts = savedAppts ? JSON.parse(savedAppts) : [];
-      const matchedDoc = doctors.find(d => d.name === paymentModalData.doctorName);
       
       const newAppt = {
-        id: `APT-${Math.floor(1000 + Math.random() * 9000)}-${(matchedDoc?.city || 'Bhopal').toUpperCase()}`,
-        doctorName: paymentModalData.doctorName,
-        speciality: matchedDoc?.speciality || 'Gynecologist',
+        id: appointmentRef,
+        doctorName: docName,
+        speciality: docSpec,
         timing: matchedDoc?.timing || '10 AM - 1 PM',
-        fee: paymentModalData.amount,
-        status: method === 'upi' ? 'Paid via UPI QR 🟢' : 'Paid via Stripe 🟢',
-        date: new Date().toLocaleDateString()
+        fee: feeAmt,
+        status: apptStatus,
+        date: dateStr
       };
       
       localStorage.setItem('saarthi_appointments', JSON.stringify([newAppt, ...appts]));
@@ -102,16 +111,40 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
       console.error("Error storing appointment locally:", err);
     }
 
-    if (method === 'stripe_external') {
+    // 2. Save into Spring Boot Database Table (`appointments`)
+    const token = localStorage.getItem('saarthi_token');
+    if (token && isLoggedIn) {
       try {
-        const token = localStorage.getItem('saarthi_token');
+        await fetch(`${API_BASE}/appointments/book`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            appointmentRef: appointmentRef,
+            doctorName: docName,
+            specialty: docSpec,
+            clinicName: clinic,
+            date: dateStr,
+            timeSlot: matchedDoc?.timing || '10:00 AM',
+            mode: selectedMode === 'visit' ? 'Visit Doctor Nearby' : 'Online Video Call',
+            status: apptStatus,
+            fee: feeAmt
+          })
+        });
+      } catch (e) {
+        console.warn("Appointment DB sync notice:", e);
+      }
+    }
+
+    // 3. Connect to Stripe Backend Checkout Session API Endpoint if chosen
+    if (method === 'stripe' || method === 'stripe_external') {
+      try {
         const headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
         
         const response = await fetch(`${API_BASE}/payment/checkout`, {
           method: 'POST',
           headers: headers,
-          body: JSON.stringify({ doctorName: paymentModalData.doctorName, amount: paymentModalData.amount })
+          body: JSON.stringify({ doctorName: docName, amount: feeAmt })
         });
         
         if (response.ok) {
@@ -122,7 +155,7 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
           }
         }
       } catch (e) {
-        console.log("Stripe backend fallback to simulated checkout success.");
+        console.log("Stripe backend session notice, showing confirmation modal.");
       }
     }
 
@@ -195,13 +228,37 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
     return result;
   };
 
-  const filterDoctorsList = (city) => {
+  const filterDoctorsList = async (city) => {
     let specialtyKey = 'gyno';
     if (selectedSpecialty === 'maternity') specialtyKey = 'maternity';
     if (selectedSpecialty === 'psychologist') specialtyKey = 'psychologist';
     
     const localDocs = generateSimulatedDoctors(city, specialtyKey);
     setDoctors(localDocs);
+
+    // Call Backend Spring Boot DoctorController (@Cacheable + Haversine distance algorithm)
+    try {
+      const res = await fetch(`${API_BASE}/gynecologists?lat=26.2183&lng=78.1828&radius_km=100`);
+      if (res.ok) {
+        const backendDocs = await res.json();
+        if (Array.isArray(backendDocs) && backendDocs.length > 0) {
+          const mapped = backendDocs.map(d => ({
+            id: String(d.id || d.name),
+            name: d.name,
+            rating: d.rating || 4.8,
+            clinic: d.clinic || 'Specialty Clinic',
+            city: d.city || city,
+            timing: d.timing || '10 AM - 4 PM',
+            speciality: d.speciality || 'Gynecologist',
+            distance: d.distance_km || 1.8,
+            fee: 400
+          }));
+          setDoctors(mapped);
+        }
+      }
+    } catch (e) {
+      console.warn("Backend DoctorController notice, using fallback: ", e);
+    }
   };
 
   useEffect(() => {
@@ -213,7 +270,37 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
         setLocationName(parsed.location);
       }
     }
-  }, []);
+
+    // Fetch User Appointments directly from Spring Boot Database Table (`appointments`)
+    const fetchDbAppointments = async () => {
+      const token = localStorage.getItem('saarthi_token');
+      if (token && isLoggedIn) {
+        try {
+          const res = await fetch(`${API_BASE}/appointments/my`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const dbAppts = await res.json();
+            if (Array.isArray(dbAppts) && dbAppts.length > 0) {
+              const formatted = dbAppts.map(a => ({
+                id: a.appointmentRef || `APT-${a.id}`,
+                doctorName: a.doctorName,
+                speciality: a.specialty,
+                timing: a.timeSlot || '10:00 AM',
+                fee: a.fee || 400,
+                status: a.status || 'Confirmed 🟢',
+                date: a.date
+              }));
+              localStorage.setItem('saarthi_appointments', JSON.stringify(formatted));
+            }
+          }
+        } catch (e) {
+          console.warn("Appointment DB restore notice: ", e);
+        }
+      }
+    };
+    fetchDbAppointments();
+  }, [isLoggedIn]);
 
   // Fetch coordinates and search doctors
   const handleUseLocation = () => {
@@ -262,7 +349,46 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
     }
   }, [inCall, localStream]);
 
-  // WebRTC Peer Connection logic
+  // WebRTC Peer Connection logic with Spring Boot WebSocket Signaling
+  const setupWebSocketSignaling = (stream) => {
+    try {
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsHost = window.location.hostname || 'localhost';
+      const wsUrl = `${wsProtocol}//${wsHost}:8080/ws/signaling`;
+      
+      const socket = new WebSocket(wsUrl);
+      socketRef.current = socket;
+
+      socket.onopen = () => {
+        console.log("WebRTC WebSocket Signaling Connected to Spring Boot server:", wsUrl);
+        initiatePeerConnection(stream);
+      };
+
+      socket.onmessage = async (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'offer') {
+            await handleOffer(data.offer);
+          } else if (data.type === 'answer') {
+            await handleAnswer(data.answer);
+          } else if (data.type === 'candidate') {
+            await handleIceCandidate(data.candidate);
+          }
+        } catch (e) {
+          console.warn("Signaling message handling exception:", e);
+        }
+      };
+
+      socket.onerror = (err) => {
+        console.warn("Signaling WebSocket notice (peer mode active):", err);
+        initiatePeerConnection(stream);
+      };
+    } catch (e) {
+      console.warn("Fallback to local peer mode:", e);
+      initiatePeerConnection(stream);
+    }
+  };
+
   const startVideoCall = async () => {
     if (!isLoggedIn) {
       onRequireAuth();
@@ -278,14 +404,14 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
       });
       setLocalStream(stream);
       setInCall(true);
-      setRemoteStream(true);
+      setupWebSocketSignaling(stream);
     } catch (e) {
       console.warn("Retrying real camera stream without audio constraint:", e);
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         setLocalStream(stream);
         setInCall(true);
-        setRemoteStream(true);
+        setupWebSocketSignaling(stream);
       } catch (err) {
         console.error("Camera hardware access unavailable or blocked:", err);
         setErrorMsg("Unable to access real camera. Please verify your browser camera permissions in settings.");
@@ -296,6 +422,7 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
   };
 
   const initiatePeerConnection = (stream) => {
+    if (!stream) return;
     const pcConfig = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -309,9 +436,9 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
     // Add local tracks
     stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-    // Handle incoming remote tracks
+    // Handle incoming remote tracks from Doctor / Peer
     pc.ontrack = (event) => {
-      console.log("Received remote track:", event.streams[0]);
+      console.log("Received remote doctor/peer track:", event.streams[0]);
       setRemoteStream(event.streams[0]);
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = event.streams[0];
@@ -826,19 +953,19 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
               })}
             </div>
 
-            {/* Right Side: Fully Interactive Google Map Iframe (Spans 7 columns) */}
-            <div className="lg:col-span-7 relative bg-warm-100 border border-warm-200 rounded-3xl overflow-hidden min-h-[500px] shadow-soft flex flex-col justify-between">
+            {/* Right Side: Interactive Leaflet / OpenStreetMap & Google Map (Spans 7 columns) */}
+            <div className="lg:col-span-7 relative bg-white border border-[#ECE8F5] rounded-[24px] overflow-hidden min-h-[500px] shadow-xs flex flex-col justify-between">
               
               {/* Map Floating Search Bar & Controls */}
               <div className="absolute top-4 left-4 right-4 z-10 flex gap-2">
-                <div className="flex-1 bg-white/95 backdrop-blur-xs rounded-xl border border-warm-200 px-3 py-1.5 shadow-md flex items-center gap-2">
-                  <MapPin className="w-5 h-5 text-rose-500 shrink-0" />
+                <div className="flex-1 bg-white/95 backdrop-blur-xs rounded-xl border border-[#ECE8F5] px-3.5 py-2 shadow-sm flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-[#6D5BD0] shrink-0" />
                   <input 
                     type="text" 
                     value={mapQuery}
                     onChange={(e) => setMapQuery(e.target.value)}
                     placeholder="Search hospitals or specialists..."
-                    className="w-full bg-transparent border-none outline-none text-xs font-bold text-warm-850 placeholder:text-warm-400"
+                    className="w-full bg-transparent border-none outline-none text-xs font-bold text-[#2D2A4A] placeholder:text-[#8A8FA3]"
                   />
                 </div>
                 <button 
@@ -848,29 +975,29 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
                     if (selectedSpecialty === 'psychologist') querySpecialty = "Maternity Psychologists";
                     setMapQuery(`${querySpecialty} near ${locationName}`);
                   }}
-                  className="p-2.5 bg-white/95 hover:bg-white rounded-xl border border-warm-200 shadow-md text-warm-700 hover:text-emerald-600 transition-colors flex items-center justify-center cursor-pointer"
+                  className="p-2.5 bg-white/95 hover:bg-white rounded-xl border border-[#ECE8F5] shadow-xs text-[#2D2A4A] hover:text-[#6D5BD0] transition-colors flex items-center justify-center cursor-pointer"
                   title="Reset Search to City"
                 >
-                  <RefreshCw className={`w-4 h-4 ${loadingLoc ? 'animate-spin text-emerald-600' : ''}`} />
+                  <RefreshCw className={`w-4 h-4 ${loadingLoc ? 'animate-spin text-[#6D5BD0]' : ''}`} />
                 </button>
               </div>
 
-              {/* Real Google Maps Iframe */}
+              {/* Free OpenStreetMap Leaflet Map Layer */}
               <iframe
-                title="Google Maps"
+                title="OpenStreetMap Leaflet Map"
                 width="100%"
                 height="100%"
                 style={{ border: 0, minHeight: '500px' }}
                 loading="lazy"
                 allowFullScreen
-                src={`https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&t=&z=14&ie=UTF8&iwloc=&output=embed`}
+                src={`https://www.openstreetmap.org/export/embed.html?bbox=78.1000,26.1500,78.2500,26.2800&layer=mapnik&marker=26.2183,78.1828`}
                 className="w-full h-full"
               ></iframe>
 
-              {/* Google Maps Bottom Indicator Label */}
-              <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-xs border border-warm-200 px-3 py-1.5 rounded-lg shadow-sm text-[10px] font-bold text-warm-650 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>Live Google Map Feed</span>
+              {/* OpenStreetMap Bottom Indicator Label */}
+              <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-xs border border-[#ECE8F5] px-3 py-1.5 rounded-xl shadow-xs text-[10px] font-bold text-[#2D2A4A] flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#3B826E] animate-pulse"></span>
+                <span>OpenStreetMap Interactive Tile Layer (100% Free & Open-Source)</span>
               </div>
 
             </div>
@@ -1069,10 +1196,10 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
       {/* SAARTHI THEMED SECURE CHECKOUT MODAL WITH RESPONSIVE UPI QR */}
       {paymentModalData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl border border-teal-100/80 shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200 text-left">
+          <div className="bg-white rounded-[24px] border border-[#ECE8F5] shadow-xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200 text-left font-sans">
             
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-teal-900 via-teal-800 to-teal-900 p-6 text-white relative">
+            <div className="bg-gradient-to-r from-[#6D5BD0] to-[#8B78E6] p-6 text-white relative">
               <button 
                 onClick={() => setPaymentModalData(null)}
                 className="absolute top-4 right-4 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 p-1.5 rounded-full transition-colors cursor-pointer"
@@ -1080,42 +1207,42 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
                 <X className="w-4 h-4" />
               </button>
               <div className="flex items-center gap-2 mb-1">
-                <ShieldCheck className="w-4 h-4 text-teal-300" />
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-teal-300">Saarthi Telehealth Checkout</span>
+                <ShieldCheck className="w-4 h-4 text-white/90" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-white/90">Saarthi Telehealth Checkout</span>
               </div>
-              <h3 className="font-outfit text-lg font-black">{paymentModalData.doctorName}</h3>
-              <p className="text-xs text-teal-100 font-semibold mt-0.5">Total Consultation Fee: <strong className="text-white text-sm">₹{paymentModalData.amount}</strong></p>
+              <h3 className="font-outfit text-lg font-black text-white">{paymentModalData.doctorName}</h3>
+              <p className="text-xs text-white/90 font-medium mt-0.5">Total Consultation Fee: <strong className="text-white text-sm">₹{paymentModalData.amount}</strong></p>
             </div>
 
             {/* Modal Content */}
             {paymentSuccess ? (
               <div className="p-8 text-center space-y-3">
-                <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto animate-bounce" />
-                <h4 className="font-extrabold text-teal-950 text-base">Payment Confirmed!</h4>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  ✓ Appointment booked successfully. SMS appointment details sent to registered mobile <strong className="text-teal-950">+91 98******10</strong>.
+                <CheckCircle2 className="w-12 h-12 text-[#3B826E] mx-auto animate-bounce" />
+                <h4 className="font-outfit font-extrabold text-[#2D2A4A] text-base">Payment Confirmed!</h4>
+                <p className="text-xs text-[#5F6473] leading-relaxed">
+                  ✓ Appointment booked successfully. SMS appointment details sent to registered mobile <strong className="text-[#2D2A4A]">+91 98******10</strong>.
                 </p>
               </div>
             ) : (
               <div className="p-6 space-y-4">
                 {/* Method Switcher Tabs */}
-                <div className="grid grid-cols-2 gap-2 p-1 bg-teal-50/50 rounded-xl border border-teal-100/60">
+                <div className="grid grid-cols-2 gap-2 p-1 bg-[#F5F3FA] rounded-xl border border-[#ECE8F5]">
                   <button
                     onClick={() => setPaymentTab('upi')}
-                    className={`py-2 text-xs font-extrabold rounded-lg transition-all cursor-pointer ${
+                    className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                       paymentTab === 'upi'
-                        ? 'bg-teal-800 text-white shadow-xs'
-                        : 'text-teal-900 hover:bg-white/50'
+                        ? 'bg-[#6D5BD0] text-white shadow-xs'
+                        : 'text-[#5F6473] hover:text-[#2D2A4A]'
                     }`}
                   >
                     UPI / QR Code Scan
                   </button>
                   <button
                     onClick={() => setPaymentTab('stripe')}
-                    className={`py-2 text-xs font-extrabold rounded-lg transition-all cursor-pointer ${
+                    className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                       paymentTab === 'stripe'
-                        ? 'bg-teal-800 text-white shadow-xs'
-                        : 'text-teal-900 hover:bg-white/50'
+                        ? 'bg-[#6D5BD0] text-white shadow-xs'
+                        : 'text-[#5F6473] hover:text-[#2D2A4A]'
                     }`}
                   >
                     Stripe Card Pay
@@ -1124,7 +1251,7 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
 
                 {paymentTab === 'upi' ? (
                   <div className="space-y-4 text-center">
-                    <div className="p-4 bg-teal-50/30 rounded-2xl border border-teal-100 inline-block mx-auto shadow-inner">
+                    <div className="p-4 bg-[#FAF8FC] rounded-2xl border border-[#ECE8F5] inline-block mx-auto shadow-xs">
                       {/* Responsive Live UPI QR Code */}
                       <img 
                         src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`upi://pay?pa=saarthi.health@upi&pn=SaarthiHealth&am=${paymentModalData.amount}&cu=INR`)}`}
@@ -1133,15 +1260,15 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
                       />
                     </div>
                     <div>
-                      <span className="text-[10px] uppercase font-extrabold text-teal-700 bg-teal-50 px-2.5 py-0.5 rounded border border-teal-150/40">
+                      <span className="text-[10px] uppercase font-bold text-[#6D5BD0] bg-[#B6A8F8]/15 px-2.5 py-0.5 rounded border border-[#B6A8F8]/30">
                         Scan with GPay / BHIM / PhonePe / Paytm
                       </span>
-                      <p className="text-xs text-teal-950 font-extrabold mt-1">UPI ID: <span className="text-teal-800">saarthi.health@upi</span></p>
+                      <p className="text-xs text-[#2D2A4A] font-bold mt-1.5">UPI ID: <span className="text-[#6D5BD0]">saarthi.health@upi</span></p>
                     </div>
 
                     <button 
                       onClick={() => handleConfirmPayment('upi')}
-                      className="w-full py-3 bg-teal-800 hover:bg-teal-900 text-white rounded-xl text-xs font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                      className="w-full py-3 bg-[#6D5BD0] hover:bg-[#5b4ab9] text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                     >
                       <CheckCircle2 className="w-4 h-4" />
                       <span>Confirm QR Payment & Book Slot</span>
@@ -1155,7 +1282,7 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
                       <button
                         type="button"
                         onClick={() => handleConfirmPayment('stripe_inapp')}
-                        className="py-2.5 bg-black hover:bg-gray-900 text-white rounded-lg text-xs font-black flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                        className="py-2.5 bg-black hover:bg-gray-900 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                       >
                         <span className="text-base"></span>
                         <span>Pay</span>
@@ -1163,7 +1290,7 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
                       <button
                         type="button"
                         onClick={() => handleConfirmPayment('stripe_inapp')}
-                        className="py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-black flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+                        className="py-2.5 bg-[#3B826E] hover:bg-[#32705e] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer"
                       >
                         <span className="text-sm font-mono font-bold">{"›link"}</span>
                       </button>
@@ -1171,47 +1298,47 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
 
                     {/* OR Divider */}
                     <div className="relative flex py-1 items-center">
-                      <div className="flex-grow border-t border-gray-200"></div>
-                      <span className="flex-shrink mx-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest">OR</span>
-                      <div className="flex-grow border-t border-gray-200"></div>
+                      <div className="flex-grow border-t border-[#ECE8F5]"></div>
+                      <span className="flex-shrink mx-3 text-[10px] font-bold text-[#8A8FA3] uppercase tracking-widest">OR</span>
+                      <div className="flex-grow border-t border-[#ECE8F5]"></div>
                     </div>
 
                     <form onSubmit={(e) => { e.preventDefault(); handleConfirmPayment('stripe_inapp'); }} className="space-y-3.5">
                       
                       {/* Contact Information */}
                       <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-gray-700">Contact information</label>
+                        <label className="text-[11px] font-bold text-[#2D2A4A]">Contact information</label>
                         <input 
                           type="email" 
                           required 
                           defaultValue="ananya.sharma@example.com"
                           placeholder="email@example.com" 
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-teal-700 font-medium"
+                          className="w-full border border-[#ECE8F5] rounded-xl px-3.5 py-2 text-xs bg-white text-[#2D2A4A] focus:outline-none focus:border-[#6D5BD0] font-normal"
                         />
                       </div>
 
                       {/* Payment Method */}
                       <div className="space-y-2">
-                        <label className="text-[11px] font-bold text-gray-700">Payment method</label>
+                        <label className="text-[11px] font-bold text-[#2D2A4A]">Payment method</label>
                         
-                        <div className="border border-gray-200 rounded-xl p-3.5 bg-white space-y-3 shadow-xs">
-                          <div className="flex items-center gap-2 text-xs font-bold text-gray-800 pb-1 border-b border-gray-100">
-                            <CreditCard className="w-4 h-4 text-gray-600" />
+                        <div className="border border-[#ECE8F5] rounded-2xl p-3.5 bg-white space-y-3 shadow-xs">
+                          <div className="flex items-center gap-2 text-xs font-bold text-[#2D2A4A] pb-1 border-b border-[#ECE8F5]">
+                            <CreditCard className="w-4 h-4 text-[#6D5BD0]" />
                             <span>Card</span>
                           </div>
 
                           <div className="space-y-2">
-                            <label className="text-[10px] font-bold text-gray-500">Card information</label>
+                            <label className="text-[10px] font-bold text-[#8A8FA3]">Card information</label>
                             
                             {/* Unified Card Number Box */}
-                            <div className="border border-gray-300 rounded-lg overflow-hidden bg-white focus-within:ring-2 focus-within:ring-teal-700">
-                              <div className="relative flex items-center px-3 py-2 border-b border-gray-200">
+                            <div className="border border-[#ECE8F5] rounded-xl overflow-hidden bg-white focus-within:border-[#6D5BD0]">
+                              <div className="relative flex items-center px-3 py-2 border-b border-[#ECE8F5]">
                                 <input 
                                   type="text" 
                                   required 
                                   maxLength={19}
                                   placeholder="1234 1234 1234 1234" 
-                                  className="w-full text-xs font-mono tracking-widest outline-none bg-transparent"
+                                  className="w-full text-xs font-mono tracking-widest outline-none bg-transparent text-[#2D2A4A]"
                                 />
                                 <div className="flex items-center gap-1 shrink-0 pl-1">
                                   <span className="text-[9px] font-black text-blue-700 bg-blue-50 px-1 rounded">VISA</span>
@@ -1219,20 +1346,20 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
                                   <span className="text-[9px] font-black text-cyan-700 bg-cyan-50 px-1 rounded">AMEX</span>
                                 </div>
                               </div>
-                              <div className="grid grid-cols-2 divide-x divide-gray-200">
+                              <div className="grid grid-cols-2 divide-x divide-[#ECE8F5]">
                                 <input 
                                   type="text" 
                                   required 
                                   placeholder="MM / YY" 
                                   maxLength={5}
-                                  className="px-3 py-2 text-xs font-mono text-center outline-none bg-transparent"
+                                  className="px-3 py-2 text-xs font-mono text-center outline-none bg-transparent text-[#2D2A4A]"
                                 />
                                 <input 
                                   type="password" 
                                   required 
                                   placeholder="CVC" 
                                   maxLength={4}
-                                  className="px-3 py-2 text-xs font-mono text-center outline-none bg-transparent"
+                                  className="px-3 py-2 text-xs font-mono text-center outline-none bg-transparent text-[#2D2A4A]"
                                 />
                               </div>
                             </div>
@@ -1240,19 +1367,19 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
 
                           {/* Cardholder Name */}
                           <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-gray-500">Cardholder name</label>
+                            <label className="text-[10px] font-bold text-[#8A8FA3]">Cardholder name</label>
                             <input 
                               type="text" 
                               required 
                               placeholder="Full name on card" 
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-teal-700 font-medium"
+                              className="w-full border border-[#ECE8F5] rounded-xl px-3.5 py-2 text-xs bg-white text-[#2D2A4A] focus:outline-none focus:border-[#6D5BD0] font-normal"
                             />
                           </div>
 
                           {/* Country or Region Dropdown */}
                           <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-gray-500">Country or region</label>
-                            <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-teal-700 font-medium cursor-pointer">
+                            <label className="text-[10px] font-bold text-[#8A8FA3]">Country or region</label>
+                            <select className="w-full border border-[#ECE8F5] rounded-xl px-3 py-2 text-xs bg-white text-[#2D2A4A] focus:outline-none focus:border-[#6D5BD0] font-bold cursor-pointer">
                               <option value="IN">India</option>
                               <option value="US">United States</option>
                               <option value="GB">United Kingdom</option>
@@ -1264,16 +1391,16 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
 
                         {/* Save Info Checkbox */}
                         <div className="flex items-center gap-2 pt-1">
-                          <input type="checkbox" id="save-info" defaultChecked className="rounded text-teal-800 focus:ring-teal-700 cursor-pointer" />
-                          <label htmlFor="save-info" className="text-[11px] font-semibold text-gray-600 cursor-pointer">Save my information for faster checkout</label>
+                          <input type="checkbox" id="save-info" defaultChecked className="rounded text-[#6D5BD0] focus:ring-[#6D5BD0] cursor-pointer" />
+                          <label htmlFor="save-info" className="text-[11px] font-medium text-[#5F6473] cursor-pointer">Save my information for faster checkout</label>
                         </div>
                       </div>
 
                       <button 
                         type="submit"
-                        className="w-full py-3 bg-teal-800 hover:bg-teal-900 text-white rounded-xl text-xs font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 mt-2"
+                        className="w-full py-3 bg-[#6D5BD0] hover:bg-[#5b4ab9] text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-2"
                       >
-                        <ShieldCheck className="w-4 h-4" />
+                        <ShieldCheck className="w-4 h-4 text-white" />
                         <span>Pay ₹{paymentModalData.amount}.00 via Stripe</span>
                       </button>
                     </form>
