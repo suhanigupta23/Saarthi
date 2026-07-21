@@ -375,9 +375,10 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
   // WebRTC Peer Connection logic with Spring Boot WebSocket Signaling
   const setupWebSocketSignaling = (stream) => {
     try {
+      const envWsUrl = import.meta.env.VITE_WS_SIGNALING_URL;
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsHost = window.location.hostname || 'localhost';
-      const wsUrl = `${wsProtocol}//${wsHost}/ws/signaling`;
+      const wsHost = window.location.host || 'localhost:5173';
+      const wsUrl = envWsUrl || `${wsProtocol}//${wsHost}/ws/signaling`;
       
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
