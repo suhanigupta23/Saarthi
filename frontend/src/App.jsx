@@ -21,7 +21,7 @@ import heroWomen from './assets/hero-women.jpg';
 import aboutWellnessImg from './assets/about-wellness.jpg';
 import aiSupportImg from './assets/ai-support.jpg';
 
-export const API_BASE = '/api';
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 // Recreated Saarthi Emblem Logo matching wellness theme and reference emblem design
 const SaarthiLogo = ({ className = "w-7 h-7" }) => (
