@@ -1254,41 +1254,41 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
 
       {/* SAARTHI THEMED SECURE CHECKOUT MODAL WITH RESPONSIVE UPI QR */}
       {paymentModalData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-white rounded-[24px] border border-[#ECE8F5] shadow-xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200 text-left font-sans">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-[24px] border border-[#ECE8F5] shadow-xl max-w-md w-full max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 text-left font-sans">
             
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-[#6D5BD0] to-[#8B78E6] p-6 text-white relative">
+            <div className="bg-gradient-to-r from-[#6D5BD0] to-[#8B78E6] px-5 py-3.5 text-white relative shrink-0">
               <button 
                 onClick={() => setPaymentModalData(null)}
-                className="absolute top-4 right-4 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 p-1.5 rounded-full transition-colors cursor-pointer"
+                className="absolute top-3.5 right-4 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 p-1 rounded-full transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
-              <div className="flex items-center gap-2 mb-1">
-                <ShieldCheck className="w-4 h-4 text-white/90" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-white/90">Saarthi Telehealth Checkout</span>
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-white/90" />
+                <span className="text-[9px] font-bold uppercase tracking-wider text-white/90">Saarthi Telehealth Checkout</span>
               </div>
-              <h3 className="font-outfit text-lg font-black text-white">{paymentModalData.doctorName}</h3>
-              <p className="text-xs text-white/90 font-medium mt-0.5">Total Consultation Fee: <strong className="text-white text-sm">₹{paymentModalData.amount}</strong></p>
+              <h3 className="font-outfit text-base font-black text-white">{paymentModalData.doctorName}</h3>
+              <p className="text-xs text-white/90 font-medium">Total Consultation Fee: <strong className="text-white text-xs">₹{paymentModalData.amount}</strong></p>
             </div>
 
             {/* Modal Content */}
             {paymentSuccess ? (
-              <div className="p-8 text-center space-y-3">
-                <CheckCircle2 className="w-12 h-12 text-[#3B826E] mx-auto animate-bounce" />
-                <h4 className="font-outfit font-extrabold text-[#2D2A4A] text-base">Payment Confirmed!</h4>
+              <div className="p-6 text-center space-y-3 overflow-y-auto flex-1">
+                <CheckCircle2 className="w-10 h-10 text-[#3B826E] mx-auto animate-bounce" />
+                <h4 className="font-outfit font-extrabold text-[#2D2A4A] text-sm">Payment Confirmed!</h4>
                 <p className="text-xs text-[#5F6473] leading-relaxed">
                   ✓ Appointment booked successfully. SMS appointment details sent to registered mobile <strong className="text-[#2D2A4A]">+91 98******10</strong>.
                 </p>
               </div>
             ) : (
-              <div className="p-6 space-y-4">
+              <div className="p-4 sm:p-5 space-y-3 overflow-y-auto flex-1">
                 {/* Method Switcher Tabs */}
                 <div className="grid grid-cols-2 gap-2 p-1 bg-[#F5F3FA] rounded-xl border border-[#ECE8F5]">
                   <button
                     onClick={() => setPaymentTab('upi')}
-                    className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    className={`py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                       paymentTab === 'upi'
                         ? 'bg-[#6D5BD0] text-white shadow-xs'
                         : 'text-[#5F6473] hover:text-[#2D2A4A]'
@@ -1298,7 +1298,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                   </button>
                   <button
                     onClick={() => setPaymentTab('stripe')}
-                    className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    className={`py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                       paymentTab === 'stripe'
                         ? 'bg-[#6D5BD0] text-white shadow-xs'
                         : 'text-[#5F6473] hover:text-[#2D2A4A]'
@@ -1309,70 +1309,70 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                 </div>
 
                 {paymentTab === 'upi' ? (
-                  <div className="space-y-4 text-center">
-                    <div className="p-4 bg-[#FAF8FC] rounded-2xl border border-[#ECE8F5] inline-block mx-auto shadow-xs">
+                  <div className="space-y-3 text-center">
+                    <div className="p-3 bg-[#FAF8FC] rounded-2xl border border-[#ECE8F5] inline-block mx-auto shadow-xs">
                       {/* Responsive Live UPI QR Code */}
                       <img 
                         src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`upi://pay?pa=saarthi.health@upi&pn=SaarthiHealth&am=${paymentModalData.amount}&cu=INR`)}`}
                         alt="UPI Payment QR Code"
-                        className="w-40 h-40 mx-auto rounded-lg"
+                        className="w-32 h-32 mx-auto rounded-lg"
                       />
                     </div>
                     <div>
-                      <span className="text-[10px] uppercase font-bold text-[#6D5BD0] bg-[#B6A8F8]/15 px-2.5 py-0.5 rounded border border-[#B6A8F8]/30">
+                      <span className="text-[9px] uppercase font-bold text-[#6D5BD0] bg-[#B6A8F8]/15 px-2 py-0.5 rounded border border-[#B6A8F8]/30">
                         Scan with GPay / BHIM / PhonePe / Paytm
                       </span>
-                      <p className="text-xs text-[#2D2A4A] font-bold mt-1.5">UPI ID: <span className="text-[#6D5BD0]">saarthi.health@upi</span></p>
+                      <p className="text-xs text-[#2D2A4A] font-bold mt-1">UPI ID: <span className="text-[#6D5BD0]">saarthi.health@upi</span></p>
                     </div>
 
                     <button 
                       onClick={() => handleConfirmPayment('upi')}
-                      className="w-full py-3 bg-[#6D5BD0] hover:bg-[#5b4ab9] text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                      className="w-full py-2.5 bg-[#6D5BD0] hover:bg-[#5b4ab9] text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                     >
-                      <CheckCircle2 className="w-4 h-4" />
+                      <CheckCircle2 className="w-3.5 h-3.5" />
                       <span>Confirm QR Payment & Book Slot</span>
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-4 text-left font-sans">
+                  <div className="space-y-3 text-left font-sans">
                     
                     {/* Express Checkout Buttons */}
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         onClick={() => handleConfirmPayment('stripe_inapp')}
-                        className="py-2.5 bg-black hover:bg-gray-900 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                        className="py-2 bg-black hover:bg-gray-900 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer"
                       >
-                        <span className="text-base"></span>
+                        <span className="text-sm"></span>
                         <span>Pay</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => handleConfirmPayment('stripe_inapp')}
-                        className="py-2.5 bg-[#3B826E] hover:bg-[#32705e] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                        className="py-2 bg-[#3B826E] hover:bg-[#32705e] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer"
                       >
-                        <span className="text-sm font-mono font-bold">{"›link"}</span>
+                        <span className="text-xs font-mono font-bold">{"›link"}</span>
                       </button>
                     </div>
 
                     {/* OR Divider */}
-                    <div className="relative flex py-1 items-center">
+                    <div className="relative flex py-0.5 items-center">
                       <div className="flex-grow border-t border-[#ECE8F5]"></div>
-                      <span className="flex-shrink mx-3 text-[10px] font-bold text-[#8A8FA3] uppercase tracking-widest">OR</span>
+                      <span className="flex-shrink mx-3 text-[9px] font-bold text-[#8A8FA3] uppercase tracking-widest">OR</span>
                       <div className="flex-grow border-t border-[#ECE8F5]"></div>
                     </div>
 
-                    <form onSubmit={(e) => { e.preventDefault(); handleConfirmPayment('stripe_inapp'); }} className="space-y-3.5">
+                    <form onSubmit={(e) => { e.preventDefault(); handleConfirmPayment('stripe_inapp'); }} className="space-y-2.5">
                       
                       {/* Contact Information */}
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-[#2D2A4A]">Contact information</label>
+                      <div className="space-y-0.5">
+                        <label className="text-[10px] font-bold text-[#2D2A4A]">Contact information</label>
                         <input 
                           type="email" 
                           required 
                           defaultValue="ananya.sharma@example.com"
                           placeholder="email@example.com" 
-                          className="w-full border border-[#ECE8F5] rounded-xl px-3.5 py-2 text-xs bg-white text-[#2D2A4A] focus:outline-none focus:border-[#6D5BD0] font-normal"
+                          className="w-full border border-[#ECE8F5] rounded-xl px-3 py-1.5 text-xs bg-white text-[#2D2A4A] focus:outline-none focus:border-[#6D5BD0] font-normal"
                         />
                       </div>
 
