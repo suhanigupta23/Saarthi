@@ -136,7 +136,7 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
     }
 
     // 3. Connect to Stripe Backend Checkout Session API Endpoint if chosen
-    if (method === 'stripe' || method === 'stripe_external') {
+    if (method === 'stripe' || method === 'stripe_inapp' || method === 'stripe_external') {
       try {
         const headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -228,7 +228,7 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
     return result;
   };
 
-  const filterDoctorsList = async (city) => {
+  const filterDoctorsList = async (city, customCoords) => {
     let specialtyKey = 'gyno';
     if (selectedSpecialty === 'maternity') specialtyKey = 'maternity';
     if (selectedSpecialty === 'psychologist') specialtyKey = 'psychologist';
@@ -236,9 +236,12 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
     const localDocs = generateSimulatedDoctors(city, specialtyKey);
     setDoctors(localDocs);
 
-    // Call Backend Spring Boot DoctorController (@Cacheable + Haversine distance algorithm)
+    // Call Backend Spring Boot DoctorController (@Cacheable + Haversine distance algorithm) with real dynamic GPS coordinates
+    const latitude = customCoords?.lat || location?.lat || 26.2183;
+    const longitude = customCoords?.lng || location?.lng || 78.1828;
+
     try {
-      const res = await fetch(`${API_BASE}/gynecologists?lat=26.2183&lng=78.1828&radius_km=100`);
+      const res = await fetch(`${API_BASE}/gynecologists?lat=${latitude}&lng=${longitude}&radius_km=100`);
       if (res.ok) {
         const backendDocs = await res.json();
         if (Array.isArray(backendDocs) && backendDocs.length > 0) {
