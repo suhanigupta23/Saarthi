@@ -23,11 +23,22 @@ import aiSupportImg from './assets/ai-support.jpg';
 
 export const API_BASE = '/api';
 
-// Leftmost Medical Heart-Cross SVG Logo Component
-const SaarthiLogo = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 text-[#6D5BD0] shrink-0">
-    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" className="stroke-[#6D5BD0]" />
-    <path d="M12 6.5v6M9 9.5h6" className="stroke-[#D88AB4]" strokeWidth="2.2" />
+// Recreated Saarthi Emblem Logo matching wellness theme and reference emblem design
+const SaarthiLogo = ({ className = "w-7 h-7" }) => (
+  <svg viewBox="0 0 100 100" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
+    {/* Outer Soft Lavender Background Circle */}
+    <circle cx="50" cy="50" r="46" fill="#F5F3FA" stroke="#6D5BD0" strokeWidth="2.5" />
+    {/* 4 Direction Compass Tick Lines */}
+    <line x1="50" y1="6" x2="50" y2="15" stroke="#6D5BD0" strokeWidth="3.5" strokeLinecap="round" />
+    <line x1="50" y1="85" x2="50" y2="94" stroke="#6D5BD0" strokeWidth="3.5" strokeLinecap="round" />
+    <line x1="6" y1="50" x2="15" y2="50" stroke="#6D5BD0" strokeWidth="3.5" strokeLinecap="round" />
+    <line x1="85" y1="50" x2="94" y2="50" stroke="#6D5BD0" strokeWidth="3.5" strokeLinecap="round" />
+    {/* Inner Muted Ring */}
+    <circle cx="50" cy="50" r="32" stroke="#6D5BD0" strokeWidth="2.5" fill="#FAF8FC" />
+    {/* Serene Woman Silhouette */}
+    <path d="M45 32C40.5 32 37 35.5 37 40C37 43.5 39.5 46.5 43 47.5C38.5 50.5 35 56 35 64C35 66.5 40 68 47 68C49 68 51 67 53 65" fill="#2D2A4A" />
+    {/* Caring Heart in Arms */}
+    <path d="M62 52C59 49 54.5 50.5 54.5 54C54.5 57.5 59.5 61.5 62 63C64.5 61.5 69.5 57.5 69.5 54C69.5 50.5 65 49 62 52Z" fill="#D88AB4" />
   </svg>
 );
 
@@ -169,8 +180,8 @@ function App() {
     { id: 'vault', label: 'MediVault Records Locker', icon: Database },
     { id: 'yojana', label: 'HealthYojana Scheme Finder', icon: FileText },
     { id: 'ngo', label: 'NGOHeal Support Aid', icon: Building2 },
-    { id: 'chat', label: 'CareCircle Peer Support', icon: MessageCircle },
     { id: 'vax', label: 'VaxAlert Vaccine Hub', icon: Shield },
+    { id: 'chat', label: 'CareCircle Peer Support', icon: MessageCircle },
   ];
 
   // Simplified copies for non-technical users
@@ -212,16 +223,16 @@ function App() {
       description: "Get assistance from local community support groups offering medical aid, advice, and shelter."
     },
     {
-      id: 'chat',
-      icon: MessageCircle,
-      title: "CareCircle",
-      description: "Talk privately in safe online groups with other women who are going through the same health journeys."
-    },
-    {
       id: 'vax',
       icon: Shield,
       title: "VaxAlert",
       description: "Set up a personal vaccine calendar with automated SMS reminders for you and your daughters."
+    },
+    {
+      id: 'chat',
+      icon: MessageCircle,
+      title: "CareCircle",
+      description: "Talk privately in safe online groups with other women who are going through the same health journeys."
     }
   ];
 
@@ -754,7 +765,7 @@ function App() {
                     {activeTab === 'home' && <DashboardHome user={user} onTabChange={setActiveTab} />}
                     {activeTab === 'cycle' && <SheCycle isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
                     {activeTab === 'symptom' && <SymptoScan isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} onTabChange={setActiveTab} />}
-                    {activeTab === 'gynconnect' && <GynConnect isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
+                    {activeTab === 'gynconnect' && <GynConnect isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} onNavigateTab={setActiveTab} />}
                     {activeTab === 'profile' && <UserProfile user={user} onUpdateUser={setUser} />}
                     {activeTab === 'vault' && <MediVault isLoggedIn={isLoggedIn} user={user} onRequireAuth={handleRequireAuth} />}
                     {activeTab === 'yojana' && <HealthYojana isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
@@ -772,7 +783,7 @@ function App() {
                         {renderBackButton()}
                         {activeTab === 'cycle' && <SheCycle isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
                         {activeTab === 'symptom' && <SymptoScan isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} onTabChange={setActiveTab} />}
-                        {activeTab === 'gynconnect' && <GynConnect isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
+                        {activeTab === 'gynconnect' && <GynConnect isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} onNavigateTab={setActiveTab} />}
                         {activeTab === 'vault' && <MediVault isLoggedIn={isLoggedIn} user={user} onRequireAuth={handleRequireAuth} />}
                         {activeTab === 'yojana' && <HealthYojana isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
                         {activeTab === 'ngo' && <NGOHeal isLoggedIn={isLoggedIn} onRequireAuth={handleRequireAuth} />}
@@ -783,11 +794,11 @@ function App() {
                       /* MAIN LANDING VIEW FOR GUEST */
                       <div>
                         
-                        {/* Hero Section - REFINED MUTED INDIGO THEME */}
-                        <section className="bg-[#FAF8FC] text-[#2D2A4A] py-16 px-6 sm:px-10 border-b border-[#ECE8F5]">
+                        {/* Hero Section - SOFT LIGHT CALMING LAVENDER-INDIGO THEME */}
+                        <section className="bg-gradient-to-b from-[#EBE5F8] to-[#F5F2FC] text-[#2D2A4A] py-16 px-6 sm:px-10 border-b border-[#DDD5F0]">
                           <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
                             <div className="space-y-6 text-left">
-                              <div className="inline-block bg-[#B6A8F8]/15 border border-[#B6A8F8]/30 text-[#6D5BD0] rounded-full px-4 py-1.5 font-bold text-xs uppercase tracking-wider">
+                              <div className="inline-block bg-[#6D5BD0]/10 border border-[#6D5BD0]/30 text-[#6D5BD0] rounded-full px-4 py-1.5 font-bold text-xs uppercase tracking-wider">
                                 ✨ Empowering Women's Health Since 2024
                               </div>
                               
@@ -915,18 +926,18 @@ function App() {
             )}
           </div>
           
-          {/* Universal Light Wellness Footer */}
-          <footer id="contact" className="bg-[#F5F3FA] text-[#2D2A4A] py-16 px-6 sm:px-10 border-t border-[#ECE8F5] mt-auto text-left font-sans">
+          {/* Universal Soft Light Calming Lavender-Indigo Footer */}
+          <footer id="contact" className="bg-[#F2EEFA] text-[#2D2A4A] py-16 px-6 sm:px-10 border-t border-[#DDD5F0] mt-auto text-left font-sans">
             <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-10">
               <div className="space-y-3">
                 <h3 className="font-outfit font-black text-lg text-[#2D2A4A] flex items-center gap-2">
-                  <SaarthiLogo />
+                  <SaarthiLogo className="w-8 h-8" />
                   <span>Saarthi</span>
                 </h3>
                 <p className="text-[#5F6473] text-xs leading-relaxed font-normal">
                   Empowering women through technology, clinical accessibility, and community support for better wellness outcomes.
                 </p>
-                <div className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#6D5BD0] bg-white border border-[#ECE8F5] px-2.5 py-1 rounded-full">
+                <div className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#6D5BD0] bg-white border border-[#DDD5F0] px-2.5 py-1 rounded-full shadow-3xs">
                   <span>🌿 ISO 27001 Certified Platform</span>
                 </div>
               </div>
@@ -962,7 +973,7 @@ function App() {
               </div>
             </div>
             
-            <div className="max-w-6xl mx-auto border-t border-[#ECE8F5] mt-10 pt-6 flex flex-col sm:flex-row justify-between items-center text-xs text-[#8A8FA3] font-medium gap-4">
+            <div className="max-w-6xl mx-auto border-t border-[#DDD5F0] mt-10 pt-6 flex flex-col sm:flex-row justify-between items-center text-xs text-[#8A8FA3] font-medium gap-4">
               <p>&copy; 2026 Saarthi Digital Health Hub. All rights reserved. Made with 🌸 for women's health.</p>
               <div className="flex gap-3 text-xs">
                 <a href="#" className="hover:text-[#6D5BD0] transition-colors">Privacy Policy</a>

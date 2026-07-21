@@ -814,7 +814,9 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-warm-450 text-center py-2">No daily mood or flow logs saved yet.</p>
+              <p className="text-xs text-[#8A8FA3] italic text-center py-2 leading-relaxed">
+                Log your daily mood & symptoms here; we keep this history organized for easy sharing during doctor consultations.
+              </p>
             )}
 
             {Object.keys(dayLogs).length > 0 && (
@@ -1022,25 +1024,31 @@ function SheCycle({ isLoggedIn, onRequireAuth }) {
 
               {/* Reminders List */}
               <div className="space-y-2">
-                {reminders.map((rem) => (
-                  <div key={rem.id} className={`p-3 rounded-xl border flex justify-between items-center ${rem.color} shadow-sm`}>
-                    <div>
-                      <h5 className="font-extrabold text-xs">{rem.name}</h5>
-                      <p className="text-[9px] opacity-75 mt-0.5">{new Date(rem.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
+                {reminders.length > 0 ? (
+                  reminders.map((rem) => (
+                    <div key={rem.id} className={`p-3 rounded-xl border flex justify-between items-center ${rem.color} shadow-sm`}>
+                      <div>
+                        <h5 className="font-extrabold text-xs">{rem.name}</h5>
+                        <p className="text-[9px] opacity-75 mt-0.5">{new Date(rem.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[8px] font-bold px-2 py-0.5 rounded-full border border-current">
+                          {rem.alertText}
+                        </span>
+                        <button 
+                          onClick={() => handleDeleteReminder(rem.id)}
+                          className="p-1 rounded-lg hover:bg-black/5 text-current transition-all"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[8px] font-bold px-2 py-0.5 rounded-full border border-current">
-                        {rem.alertText}
-                      </span>
-                      <button 
-                        onClick={() => handleDeleteReminder(rem.id)}
-                        className="p-1 rounded-lg hover:bg-black/5 text-current transition-all"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="text-xs text-[#8A8FA3] italic text-center py-2 leading-relaxed">
+                    Your personal & daughter's immunization schedule & reminders will be displayed here.
+                  </p>
+                )}
               </div>
 
             </div>

@@ -101,32 +101,32 @@ function AuthModal({ mode, onClose, onSuccess, setMode }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-[24px] w-full max-w-md overflow-hidden shadow-xl border border-[#ECE8F5] relative animate-in fade-in zoom-in-95 duration-200 text-left font-sans">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-white rounded-[24px] w-full max-w-md max-h-[88vh] flex flex-col overflow-hidden shadow-xl border border-[#ECE8F5] relative animate-in fade-in zoom-in-95 duration-200 text-left font-sans">
         
         {/* Top Header Card - Muted Indigo Gradient */}
-        <div className="bg-gradient-to-r from-[#6D5BD0] to-[#8B78E6] p-6 text-white relative">
+        <div className="bg-gradient-to-r from-[#6D5BD0] to-[#8B78E6] p-4 sm:p-5 text-white relative shrink-0">
           <button 
             onClick={onClose}
-            className="absolute top-4 right-4 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 p-1.5 rounded-full transition-colors cursor-pointer"
+            className="absolute top-3.5 right-3.5 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 p-1.5 rounded-full transition-colors cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
           
-          <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-4 h-4 text-white/80" />
-            <span className="font-outfit text-xs font-bold uppercase tracking-wider text-white/90">Welcome to Saarthi</span>
+          <div className="flex items-center gap-1.5 mb-1">
+            <Sparkles className="w-3.5 h-3.5 text-white/80" />
+            <span className="font-outfit text-[10px] font-bold uppercase tracking-wider text-white/90">Welcome to Saarthi</span>
           </div>
-          <h3 className="font-outfit text-2xl font-black text-white">
+          <h3 className="font-outfit text-xl font-black text-white">
             {mode === 'login' ? 'Namaste, Sign In' : 'Create Your Free Account'}
           </h3>
-          <p className="text-white/85 text-xs mt-1 leading-relaxed">
+          <p className="text-white/85 text-[11px] mt-0.5 leading-tight">
             {mode === 'login' ? 'Enter your details below to access your health dashboard.' : 'Sign up to track cycles, query AI symptom checks, and connect with doctors.'}
           </p>
         </div>
 
         {/* Form Details */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-3 overflow-y-auto flex-1">
           {error && (
             <div className={`p-3 rounded-xl text-xs font-semibold ${
               error.includes('successful') 
@@ -138,74 +138,74 @@ function AuthModal({ mode, onClose, onSuccess, setMode }) {
           )}
 
           {mode === 'signup' && (
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-[#2D2A4A]">Full Name</label>
+            <div className="space-y-0.5">
+              <label className="text-[11px] font-bold text-[#2D2A4A]">Full Name</label>
               <div className="relative">
-                <User className="w-4 h-4 text-[#8A8FA3] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <User className="w-3.5 h-3.5 text-[#8A8FA3] absolute left-3 top-1/2 -translate-y-1/2" />
                 <input 
                   type="text" 
                   required
                   placeholder="e.g. Priya Sharma"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-sm bg-white text-[#2D2A4A]"
+                  className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-xs bg-white text-[#2D2A4A]"
                 />
               </div>
             </div>
           )}
 
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-[#2D2A4A]">Email or Username</label>
+          <div className="space-y-0.5">
+            <label className="text-[11px] font-bold text-[#2D2A4A]">Email or Username</label>
             <div className="relative">
-              <Mail className="w-4 h-4 text-[#8A8FA3] absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Mail className="w-3.5 h-3.5 text-[#8A8FA3] absolute left-3 top-1/2 -translate-y-1/2" />
               <input 
                 type="text" 
                 required
                 placeholder="username or email"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-sm bg-white text-[#2D2A4A]"
+                className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-xs bg-white text-[#2D2A4A]"
               />
             </div>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-[#2D2A4A]">Password</label>
+          <div className="space-y-0.5">
+            <label className="text-[11px] font-bold text-[#2D2A4A]">Password</label>
             <div className="relative">
-              <Lock className="w-4 h-4 text-[#8A8FA3] absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Lock className="w-3.5 h-3.5 text-[#8A8FA3] absolute left-3 top-1/2 -translate-y-1/2" />
               <input 
                 type="password" 
                 required
                 placeholder="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-sm bg-white text-[#2D2A4A]"
+                className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-xs bg-white text-[#2D2A4A]"
               />
             </div>
           </div>
 
           {mode === 'signup' && (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-[#2D2A4A]">Age</label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-0.5">
+                <label className="text-[11px] font-bold text-[#2D2A4A]">Age</label>
                 <input 
                   type="number" 
                   placeholder="e.g. 24"
                   value={age}
                   onChange={(e) => setAge(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-sm bg-white text-[#2D2A4A]"
+                  className="w-full px-3 py-1.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-xs bg-white text-[#2D2A4A]"
                 />
               </div>
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-[#2D2A4A]">Location</label>
+              <div className="space-y-0.5">
+                <label className="text-[11px] font-bold text-[#2D2A4A]">Location</label>
                 <div className="relative">
-                  <MapPin className="w-4 h-4 text-[#8A8FA3] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <MapPin className="w-3.5 h-3.5 text-[#8A8FA3] absolute left-3 top-1/2 -translate-y-1/2" />
                   <input 
                     type="text" 
                     placeholder="e.g. Gwalior"
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-sm bg-white text-[#2D2A4A]"
+                    className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-xs bg-white text-[#2D2A4A]"
                   />
                 </div>
               </div>
@@ -214,12 +214,12 @@ function AuthModal({ mode, onClose, onSuccess, setMode }) {
 
           {mode === 'signup' && (
             <>
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-[#2D2A4A]">Pregnancy Status</label>
+              <div className="space-y-0.5">
+                <label className="text-[11px] font-bold text-[#2D2A4A]">Pregnancy Status</label>
                 <select 
                   value={pregnancyStatus}
                   onChange={(e) => setPregnancyStatus(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-sm bg-white text-[#2D2A4A] cursor-pointer"
+                  className="w-full px-3 py-1.5 rounded-xl border border-[#ECE8F5] focus:outline-none focus:border-[#6D5BD0] focus:ring-2 focus:ring-[#6D5BD0]/20 text-xs bg-white text-[#2D2A4A] cursor-pointer"
                 >
                   <option value="not_pregnant">Not Pregnant</option>
                   <option value="pregnant">Pregnant</option>

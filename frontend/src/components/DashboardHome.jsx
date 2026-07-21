@@ -140,18 +140,6 @@ const DashboardHome = ({ user, onTabChange }) => {
       used: true
     },
     {
-      id: "chat",
-      icon: MessageCircle,
-      title: "CareCircle Peer",
-      description: "Talk privately in safe online groups with other women.",
-      progress: 75,
-      lastUsed: "3 days ago",
-      bgClass: "bg-white border-[#ECE8F5]",
-      iconBg: "bg-[#B6A8F8]/15 text-[#6D5BD0]",
-      progressColor: "bg-[#6D5BD0]",
-      used: true
-    },
-    {
       id: "vax",
       icon: Shield,
       title: "VaxAlert Hub",
@@ -162,6 +150,18 @@ const DashboardHome = ({ user, onTabChange }) => {
       iconBg: "bg-[#D88AB4]/15 text-[#C06093]",
       progressColor: "bg-[#D88AB4]",
       used: false
+    },
+    {
+      id: "chat",
+      icon: MessageCircle,
+      title: "CareCircle Peer",
+      description: "Talk privately in safe online groups with other women.",
+      progress: 75,
+      lastUsed: "3 days ago",
+      bgClass: "bg-white border-[#ECE8F5]",
+      iconBg: "bg-[#B6A8F8]/15 text-[#6D5BD0]",
+      progressColor: "bg-[#6D5BD0]",
+      used: true
     }
   ];
 
@@ -259,7 +259,7 @@ const DashboardHome = ({ user, onTabChange }) => {
         {/* Personalized Feature Directory */}
         <section id="services-section" className="space-y-4">
           <h2 className="text-2xl font-black text-[#2D2A4A] text-left font-outfit">Your Feature Directory</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {personalizedFeatures.map((feature, index) => (
               <div 
                 key={index} 

@@ -8,7 +8,7 @@ import { API_BASE } from '../App.jsx';
 import doctorConsultationImg from '../assets/doctor-consultation.jpg';
 import telehealthVideoImg from '../assets/telehealth-video.jpg';
 
-function GynConnect({ isLoggedIn, onRequireAuth }) {
+function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
   const [activeSection, setActiveSection] = useState('onboarding'); // 'onboarding', 'nearby', 'consult'
   const [selectedSpecialty, setSelectedSpecialty] = useState(''); // 'gyno', 'maternity', 'psychologist'
   const [selectedMode, setSelectedMode] = useState(''); // 'video', 'visit'
@@ -27,6 +27,26 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
   const [scanProgress, setScanProgress] = useState(0);
   const [scanStatusText, setScanStatusText] = useState('');
   const [locationToast, setLocationToast] = useState('');
+  const [mapProvider, setMapProvider] = useState('google'); // 'google' or 'openstreetmap'
+
+  const getCityCoordinates = (cityStr) => {
+    const norm = (cityStr || '').toLowerCase();
+    if (norm.includes('kota')) {
+      return { lat: 25.2138, lng: 75.8648, bbox: '75.8000,25.1500,75.9200,25.2800' };
+    } else if (norm.includes('bhopal')) {
+      return { lat: 23.2599, lng: 77.4126, bbox: '77.3500,23.2000,77.4800,23.3200' };
+    } else if (norm.includes('indore')) {
+      return { lat: 22.7196, lng: 75.8577, bbox: '75.8000,22.6500,75.9200,22.7800' };
+    } else if (norm.includes('jaipur')) {
+      return { lat: 26.9124, lng: 75.7873, bbox: '75.7200,26.8500,75.8500,26.9800' };
+    } else if (norm.includes('delhi')) {
+      return { lat: 28.6139, lng: 77.2090, bbox: '77.1500,28.5500,77.2800,28.6800' };
+    } else if (norm.includes('mumbai')) {
+      return { lat: 19.0760, lng: 72.8777, bbox: '72.8000,19.0000,72.9500,19.1500' };
+    }
+    // Default Gwalior
+    return { lat: 26.2183, lng: 78.1828, bbox: '78.1000,26.1500,78.2500,26.2800' };
+  };
 
   // WebRTC & Call states
   const [inCall, setInCall] = useState(false);
@@ -944,11 +964,15 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
                         <span>Pay & Book Appointment (₹{doc.fee || 500})</span>
                       </button>
                       <button 
-                        onClick={() => setMapQuery(`${doc.name}, ${doc.clinic}, ${doc.city}`)}
+                        onClick={() => {
+                          setSelectedMapDoctor(doc);
+                          setMapQuery(`${doc.name}, ${doc.clinic}, ${doc.city}`);
+                          setMapProvider('google');
+                        }}
                         className="w-full py-2 bg-white hover:bg-[#F5F3FA] text-[#2D2A4A] rounded-xl font-bold text-[11px] border border-[#6D5BD0] transition-colors text-center flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <MapPin className="w-3.5 h-3.5 text-[#6D5BD0]" />
-                        <span>View on Google Map</span>
+                        <span>View Clinic Pin on Map</span>
                       </button>
                     </div>
                   </div>
@@ -956,11 +980,11 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
               })}
             </div>
 
-            {/* Right Side: Interactive Leaflet / OpenStreetMap & Google Map (Spans 7 columns) */}
+            {/* Right Side: Fully Dynamic Interactive Map (Spans 7 columns) */}
             <div className="lg:col-span-7 relative bg-white border border-[#ECE8F5] rounded-[24px] overflow-hidden min-h-[500px] shadow-xs flex flex-col justify-between">
               
-              {/* Map Floating Search Bar & Controls */}
-              <div className="absolute top-4 left-4 right-4 z-10 flex gap-2">
+              {/* Map Floating Controls & Provider Switcher */}
+              <div className="absolute top-4 left-4 right-4 z-10 flex flex-col sm:flex-row gap-2">
                 <div className="flex-1 bg-white/95 backdrop-blur-xs rounded-xl border border-[#ECE8F5] px-3.5 py-2 shadow-sm flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-[#6D5BD0] shrink-0" />
                   <input 
@@ -971,36 +995,67 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
                     className="w-full bg-transparent border-none outline-none text-xs font-bold text-[#2D2A4A] placeholder:text-[#8A8FA3]"
                   />
                 </div>
-                <button 
-                  onClick={() => {
-                    let querySpecialty = "Gynecologists";
-                    if (selectedSpecialty === 'maternity') querySpecialty = "Maternity Specialists";
-                    if (selectedSpecialty === 'psychologist') querySpecialty = "Maternity Psychologists";
-                    setMapQuery(`${querySpecialty} near ${locationName}`);
-                  }}
-                  className="p-2.5 bg-white/95 hover:bg-white rounded-xl border border-[#ECE8F5] shadow-xs text-[#2D2A4A] hover:text-[#6D5BD0] transition-colors flex items-center justify-center cursor-pointer"
-                  title="Reset Search to City"
-                >
-                  <RefreshCw className={`w-4 h-4 ${loadingLoc ? 'animate-spin text-[#6D5BD0]' : ''}`} />
-                </button>
+                
+                <div className="flex items-center gap-1 bg-white/95 backdrop-blur-xs rounded-xl border border-[#ECE8F5] p-1 shadow-sm shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setMapProvider('google')}
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                      mapProvider === 'google'
+                        ? 'bg-[#6D5BD0] text-white shadow-3xs'
+                        : 'text-[#5F6473] hover:text-[#2D2A4A]'
+                    }`}
+                  >
+                    Google Map
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMapProvider('openstreetmap')}
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                      mapProvider === 'openstreetmap'
+                        ? 'bg-[#6D5BD0] text-white shadow-3xs'
+                        : 'text-[#5F6473] hover:text-[#2D2A4A]'
+                    }`}
+                  >
+                    OpenStreetMap
+                  </button>
+                </div>
               </div>
 
-              {/* Free OpenStreetMap Leaflet Map Layer */}
-              <iframe
-                title="OpenStreetMap Leaflet Map"
-                width="100%"
-                height="100%"
-                style={{ border: 0, minHeight: '500px' }}
-                loading="lazy"
-                allowFullScreen
-                src={`https://www.openstreetmap.org/export/embed.html?bbox=78.1000,26.1500,78.2500,26.2800&layer=mapnik&marker=26.2183,78.1828`}
-                className="w-full h-full"
-              ></iframe>
+              {/* Dynamic Map Layers */}
+              {mapProvider === 'google' ? (
+                <iframe
+                  title="Google Maps Live Search Feed"
+                  width="100%"
+                  height="100%"
+                  style={{ border: 0, minHeight: '500px' }}
+                  loading="lazy"
+                  allowFullScreen
+                  src={`https://maps.google.com/maps?q=${encodeURIComponent(mapQuery || `Gynecologists near ${locationName}`)}&t=&z=14&ie=UTF8&iwloc=&output=embed`}
+                  className="w-full h-full"
+                ></iframe>
+              ) : (
+                (() => {
+                  const cityCoords = getCityCoordinates(locationName);
+                  return (
+                    <iframe
+                      title="OpenStreetMap Leaflet Dynamic Layer"
+                      width="100%"
+                      height="100%"
+                      style={{ border: 0, minHeight: '500px' }}
+                      loading="lazy"
+                      allowFullScreen
+                      src={`https://www.openstreetmap.org/export/embed.html?bbox=${cityCoords.bbox}&layer=mapnik&marker=${cityCoords.lat},${cityCoords.lng}`}
+                      className="w-full h-full"
+                    ></iframe>
+                  );
+                })()
+              )}
 
-              {/* OpenStreetMap Bottom Indicator Label */}
+              {/* Bottom Live Indicator Badge */}
               <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-xs border border-[#ECE8F5] px-3 py-1.5 rounded-xl shadow-xs text-[10px] font-bold text-[#2D2A4A] flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-[#3B826E] animate-pulse"></span>
-                <span>OpenStreetMap Interactive Tile Layer (100% Free & Open-Source)</span>
+                <span>{mapProvider === 'google' ? `Live Clinic Pin Feed (${locationName})` : `OpenStreetMap Layer centered on ${locationName}`}</span>
               </div>
 
             </div>
@@ -1183,17 +1238,17 @@ function GynConnect({ isLoggedIn, onRequireAuth }) {
             Evaluate your conditions using SymptoScan before consulting. It generates a clear question list to ask during your appointment.
           </p>
         </div>
-        <a 
-          href="#symptom" 
-          onClick={(e) => {
-            e.preventDefault();
-            const elem = document.getElementById('services-section');
-            if (elem) elem.scrollIntoView({ behavior: 'smooth' });
+        <button 
+          onClick={() => {
+            if (onNavigateTab) {
+              onNavigateTab('symptom');
+            }
           }}
-          className="shrink-0 px-4 py-2.5 bg-teal-850 hover:bg-teal-955 text-white rounded-xl text-xs font-extrabold transition-all shadow-sm"
+          className="shrink-0 px-5 py-3 bg-[#6D5BD0] hover:bg-[#5b4ab9] text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
         >
-          Check SymptoScan AI →
-        </a>
+          <span>Check SymptoScan AI</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       {/* SAARTHI THEMED SECURE CHECKOUT MODAL WITH RESPONSIVE UPI QR */}

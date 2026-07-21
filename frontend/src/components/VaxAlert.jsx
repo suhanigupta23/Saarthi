@@ -84,7 +84,12 @@ function VaxAlert({ isLoggedIn, onRequireAuth }) {
 
   useEffect(() => {
     const savedUser = localStorage.getItem('saarthi_user');
-    if (savedUser) {
+    const savedCity = localStorage.getItem('saarthi_user_city');
+
+    if (savedCity) {
+      setUserCity(savedCity);
+      setDriveNews(generateLocationDrives(savedCity));
+    } else if (savedUser) {
       const parsed = JSON.parse(savedUser);
       if (parsed.location) {
         const cityStr = parsed.location.split(',')[0].trim();
@@ -107,7 +112,7 @@ function VaxAlert({ isLoggedIn, onRequireAuth }) {
     // Safety fallback timeout ensuring scanner never hangs
     const timer = setTimeout(() => {
       setIsLocating(false);
-      const targetCity = userCity || 'Bhopal';
+      const targetCity = userCity || 'Kota';
       setUserCity(targetCity);
       setDriveNews(generateLocationDrives(targetCity));
       triggerToastNotice(targetCity);
@@ -122,7 +127,7 @@ function VaxAlert({ isLoggedIn, onRequireAuth }) {
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude } = pos.coords;
-        let cityFound = 'Bhopal';
+        let cityFound = userCity || 'Kota';
         try {
           const controller = new AbortController();
           const signalTimeout = setTimeout(() => controller.abort(), 1800);
@@ -130,15 +135,31 @@ function VaxAlert({ isLoggedIn, onRequireAuth }) {
           const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`, { signal: controller.signal });
           clearTimeout(signalTimeout);
           const data = await res.json();
-          cityFound = data.address?.city || data.address?.town || data.address?.suburb || data.address?.state_district || 'Bhopal';
+          const rawCity = data.address?.city || data.address?.town || data.address?.suburb || data.address?.county || data.address?.state_district;
+          if (rawCity) cityFound = rawCity;
         } catch (err) {
-          if (latitude > 28.0 && latitude < 29.0) cityFound = 'Delhi';
-          else if (latitude > 22.5 && latitude < 23.5) cityFound = 'Indore';
+          if (latitude > 24.8 && latitude < 25.6 && longitude > 75.2 && longitude < 76.5) cityFound = 'Kota';
+          else if (latitude > 26.0 && latitude < 26.5) cityFound = 'Gwalior';
+          else if (latitude > 23.0 && latitude < 23.5 && longitude > 77.0 && longitude < 77.8) cityFound = 'Bhopal';
+          else if (latitude > 22.5 && latitude < 23.0 && longitude > 75.5 && longitude < 76.2) cityFound = 'Indore';
+          else if (latitude > 26.7 && latitude < 27.2) cityFound = 'Jaipur';
+          else if (latitude > 28.0 && latitude < 29.0) cityFound = 'Delhi';
           else if (latitude > 18.8 && latitude < 19.5) cityFound = 'Mumbai';
-          else if (latitude > 26.5 && latitude < 27.2) cityFound = 'Kota';
         } finally {
           setUserCity(cityFound);
           setDriveNews(generateLocationDrives(cityFound));
+          localStorage.setItem('saarthi_user_city', cityFound);
+
+          // Update saved user profile location
+          const savedUser = localStorage.getItem('saarthi_user');
+          if (savedUser) {
+            try {
+              const parsed = JSON.parse(savedUser);
+              parsed.location = `${cityFound}, India`;
+              localStorage.setItem('saarthi_user', JSON.stringify(parsed));
+            } catch (e) {}
+          }
+
           triggerToastNotice(cityFound);
           clearTimeout(timer);
           setIsLocating(false);
