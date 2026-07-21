@@ -377,7 +377,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
     try {
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsHost = window.location.hostname || 'localhost';
-      const wsUrl = `${wsProtocol}//${wsHost}:8080/ws/signaling`;
+      const wsUrl = `${wsProtocol}//${wsHost}/ws/signaling`;
       
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
