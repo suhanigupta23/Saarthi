@@ -84,20 +84,6 @@ Women's healthcare in India faces real, well-documented gaps:
 
 ---
 
-## 🚧 Current Limitations & Roadmap
-
-Being upfront about where this stands today:
-
-- Doctor listings currently use seed data rather than a live database table — moving this to a real `doctors` table with admin CRUD is the next step
-- Webhook signature verification is fully implemented; persisting the confirmed payment status to the database is in progress
-- WebRTC signaling currently supports one active call at a time; room-based isolation (keyed by appointment ID) is needed to support concurrent calls
-- No double-booking check yet on appointment slots
-- Render's free tier means the backend may take 30–50s to respond after a period of inactivity
-
-Listing these isn't a weakness — it's the honest state of an actively developed solo project, and each item above is a well-understood, scoped next step.
-
----
-
 ## 💻 Local Setup
 
 ### Prerequisites
