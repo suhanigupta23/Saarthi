@@ -4,15 +4,24 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.saarthi.dto.SymptomAnalysisResponse;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientException;
 import org.springframework.stereotype.Service;
 
+import java.net.SocketTimeoutException;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeoutException;
 
 @Service
 public class GeminiService {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(GeminiService.class);
     public static final String CIRCUIT_BREAKER_NAME = "geminiCircuit";
     private static final String DISCLAIMER =
             "Educational guidance only; this is not a diagnosis or a substitute for professional medical care.";
@@ -43,6 +52,10 @@ public class GeminiService {
     }
 
     public SymptomAnalysisResponse fallbackSymptomAnalysis(List<String> symptoms, Throwable failure) {
+        FallbackDiagnostic diagnostic = classifyFailure(failure);
+        LOGGER.warn("GEMINI_FALLBACK reason={} httpStatus={} exception={}",
+                diagnostic.reason(), diagnostic.httpStatus(), diagnostic.exceptionName());
+
         return new SymptomAnalysisResponse(
                 "AI assessment unavailable",
                 0.0,
@@ -56,6 +69,84 @@ public class GeminiService {
                 SymptomAnalysisResponse.Source.FALLBACK,
                 DISCLAIMER
         );
+    }
+
+    static FallbackDiagnostic classifyFailure(Throwable failure) {
+        String exceptionName = failure == null ? "none" : failure.getClass().getSimpleName();
+
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof CallNotPermittedException) {
+                return new FallbackDiagnostic(FallbackReason.CIRCUIT_OPEN, "none", exceptionName);
+            }
+            if (current instanceof InvalidGeminiResponseException) {
+                FallbackReason reason = "Gemini returned malformed guidance".equals(current.getMessage())
+                        ? FallbackReason.OUTPUT_JSON_INVALID
+                        : FallbackReason.OUTPUT_SCHEMA_INVALID;
+                return new FallbackDiagnostic(reason, "none", exceptionName);
+            }
+            if (current instanceof GeminiHttpClient.GeminiClientException) {
+                if ("Gemini API key is not configured".equals(current.getMessage())) {
+                    return new FallbackDiagnostic(FallbackReason.API_KEY_MISSING, "none", exceptionName);
+                }
+                if ("Gemini returned an unexpected response".equals(current.getMessage())) {
+                    return new FallbackDiagnostic(FallbackReason.UPSTREAM_RESPONSE_SHAPE, "none", exceptionName);
+                }
+            }
+        }
+
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof HttpStatusCodeException httpFailure) {
+                int status = httpFailure.getStatusCode().value();
+                FallbackReason reason = switch (status) {
+                    case 400 -> FallbackReason.HTTP_400;
+                    case 401 -> FallbackReason.HTTP_401;
+                    case 403 -> FallbackReason.HTTP_403;
+                    case 404 -> FallbackReason.HTTP_404;
+                    case 429 -> FallbackReason.HTTP_429;
+                    default -> status >= 500 && status <= 599
+                            ? FallbackReason.HTTP_5XX
+                            : FallbackReason.UNEXPECTED;
+                };
+                return new FallbackDiagnostic(reason, Integer.toString(status), exceptionName);
+            }
+        }
+
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof SocketTimeoutException
+                    || current instanceof TimeoutException
+                    || current.getClass().getSimpleName().contains("Timeout")) {
+                return new FallbackDiagnostic(
+                        FallbackReason.CONNECT_OR_READ_TIMEOUT, "none", exceptionName);
+            }
+        }
+
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof ResourceAccessException || current instanceof RestClientException) {
+                return new FallbackDiagnostic(FallbackReason.TRANSPORT_FAILURE, "none", exceptionName);
+            }
+        }
+
+        return new FallbackDiagnostic(FallbackReason.UNEXPECTED, "none", exceptionName);
+    }
+
+    enum FallbackReason {
+        API_KEY_MISSING,
+        HTTP_400,
+        HTTP_401,
+        HTTP_403,
+        HTTP_404,
+        HTTP_429,
+        HTTP_5XX,
+        CONNECT_OR_READ_TIMEOUT,
+        TRANSPORT_FAILURE,
+        UPSTREAM_RESPONSE_SHAPE,
+        OUTPUT_JSON_INVALID,
+        OUTPUT_SCHEMA_INVALID,
+        CIRCUIT_OPEN,
+        UNEXPECTED
+    }
+
+    record FallbackDiagnostic(FallbackReason reason, String httpStatus, String exceptionName) {
     }
 
     private String buildPrompt(List<String> symptoms) {
