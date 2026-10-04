@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -47,6 +48,12 @@ class GeminiResilienceIntegrationTest {
 
     @Autowired
     private CircuitBreakerRegistry circuitBreakerRegistry;
+
+    @Value("${gemini.connect-timeout}")
+    private Duration configuredConnectTimeout;
+
+    @Value("${gemini.read-timeout}")
+    private Duration configuredReadTimeout;
 
     private CircuitBreaker circuitBreaker;
 
@@ -126,10 +133,13 @@ class GeminiResilienceIntegrationTest {
         assertEquals(SymptomAnalysisResponse.Source.FALLBACK, response.source());
         assertEquals(1, geminiClient.invocations.get());
         assertTrue(elapsedMs < 2_000, "Mocked timeout fallback should be immediate in the automated test");
+        assertEquals(Duration.ofSeconds(5), configuredConnectTimeout);
+        assertEquals(Duration.ofSeconds(30), configuredReadTimeout);
 
         System.out.printf(
-                "GEMINI_TIMEOUT_EXPERIMENT clientInvocations=%d fallbackResponses=1 elapsedMs=%d productionConnectTimeoutSeconds=3 productionReadTimeoutSeconds=10%n",
-                geminiClient.invocations.get(), elapsedMs);
+                "GEMINI_TIMEOUT_EXPERIMENT clientInvocations=%d fallbackResponses=1 elapsedMs=%d productionConnectTimeoutSeconds=%d productionReadTimeoutSeconds=%d%n",
+                geminiClient.invocations.get(), elapsedMs,
+                configuredConnectTimeout.toSeconds(), configuredReadTimeout.toSeconds());
     }
 
     @Test
