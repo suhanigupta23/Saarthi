@@ -4,7 +4,13 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "appointments")
+@Table(
+        name = "appointments",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_appointment_provider_date_time",
+                columnNames = {"provider_id", "appointment_date", "time_slot"}
+        )
+)
 public class Appointment {
 
     @Id
@@ -15,26 +21,38 @@ public class Appointment {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(nullable = false)
+    @Column(nullable = false, unique = true)
     private String appointmentRef;
+
+    @Column(name = "provider_id", nullable = false)
+    private String providerId;
 
     private String doctorName;
     private String specialty;
     private String clinicName;
+    @Column(name = "appointment_date", nullable = false)
     private String date;
+
+    @Column(name = "time_slot", nullable = false)
     private String timeSlot;
     private String mode; // 'Online Video Call' or 'Visit Doctor Nearby'
-    private String status; // 'Booked', 'Completed', 'Cancelled'
-    private Integer fee;
+    private String status; // Server-controlled lifecycle state; new bookings use PENDING_PAYMENT.
+    private Integer fee; // Server-controlled Saarthi demo consultation amount.
+
+    @Column(unique = true)
+    private String stripeCheckoutSessionId;
+
+    private LocalDateTime confirmedAt;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
     public Appointment() {}
 
-    public Appointment(User user, String appointmentRef, String doctorName, String specialty, String clinicName, String date, String timeSlot, String mode, String status, Integer fee, LocalDateTime createdAt) {
+    public Appointment(User user, String appointmentRef, String providerId, String doctorName, String specialty, String clinicName, String date, String timeSlot, String mode, String status, Integer fee, LocalDateTime createdAt) {
         this.user = user;
         this.appointmentRef = appointmentRef;
+        this.providerId = providerId;
         this.doctorName = doctorName;
         this.specialty = specialty;
         this.clinicName = clinicName;
@@ -54,6 +72,9 @@ public class Appointment {
 
     public String getAppointmentRef() { return appointmentRef; }
     public void setAppointmentRef(String appointmentRef) { this.appointmentRef = appointmentRef; }
+
+    public String getProviderId() { return providerId; }
+    public void setProviderId(String providerId) { this.providerId = providerId; }
 
     public String getDoctorName() { return doctorName; }
     public void setDoctorName(String doctorName) { this.doctorName = doctorName; }
@@ -78,6 +99,12 @@ public class Appointment {
 
     public Integer getFee() { return fee; }
     public void setFee(Integer fee) { this.fee = fee; }
+
+    public String getStripeCheckoutSessionId() { return stripeCheckoutSessionId; }
+    public void setStripeCheckoutSessionId(String stripeCheckoutSessionId) { this.stripeCheckoutSessionId = stripeCheckoutSessionId; }
+
+    public LocalDateTime getConfirmedAt() { return confirmedAt; }
+    public void setConfirmedAt(LocalDateTime confirmedAt) { this.confirmedAt = confirmedAt; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

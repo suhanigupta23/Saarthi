@@ -8,6 +8,29 @@ import { API_BASE } from '../App.jsx';
 import doctorConsultationImg from '../assets/doctor-consultation.jpg';
 import telehealthVideoImg from '../assets/telehealth-video.jpg';
 
+const SAARTHI_DEMO_CONSULTATION_AMOUNT = 500;
+
+const readApiErrorMessage = async (response, fallback) => {
+  try {
+    const body = await response.json();
+    return body.message || fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const formatAppointmentForCache = (appointment) => ({
+  id: appointment.appointmentRef || `APT-${appointment.id}`,
+  appointmentId: appointment.id,
+  appointmentRef: appointment.appointmentRef,
+  doctorName: appointment.doctorName,
+  speciality: appointment.specialty,
+  timing: appointment.timeSlot,
+  fee: appointment.fee,
+  status: appointment.status,
+  date: appointment.date
+});
+
 function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
   const [activeSection, setActiveSection] = useState('onboarding'); // 'onboarding', 'nearby', 'consult'
   const [selectedSpecialty, setSelectedSpecialty] = useState(''); // 'gyno', 'maternity', 'psychologist'
@@ -18,16 +41,18 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
   const [locationName, setLocationName] = useState('Bhopal, MP'); // Default location
   const [loadingLoc, setLoadingLoc] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [doctorResultSource, setDoctorResultSource] = useState('');
+  const [doctorResultNotice, setDoctorResultNotice] = useState('');
+  const [appointmentSaved, setAppointmentSaved] = useState(false);
+  const [bookingNotice, setBookingNotice] = useState('');
+  const [bookingError, setBookingError] = useState('');
   const [hoveredDoctorId, setHoveredDoctorId] = useState(null);
   const [selectedMapDoctor, setSelectedMapDoctor] = useState(null);
-  const [mapQuery, setMapQuery] = useState('Gynecologists near Bhopal');
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [isScanningLocation, setIsScanningLocation] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scanStatusText, setScanStatusText] = useState('');
   const [locationToast, setLocationToast] = useState('');
-  const [mapProvider, setMapProvider] = useState('google'); // 'google' or 'openstreetmap'
 
   const getCityCoordinates = (cityStr) => {
     const norm = (cityStr || '').toLowerCase();
@@ -52,9 +77,10 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
   const [inCall, setInCall] = useState(false);
   const [localStream, setLocalStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
-  const [roomId, setRoomId] = useState('101');
+  const [roomId, setRoomId] = useState('');
   const [micEnabled, setMicEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
+  const [callStatus, setCallStatus] = useState('Enter an online-video appointment reference to join the demo call.');
 
   // Post-Consultation Rating Modal States
   const [showRatingModal, setShowRatingModal] = useState(false);
@@ -67,22 +93,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('payment') === 'success') {
-      setPaymentSuccess(true);
-      try {
-        const savedAppts = localStorage.getItem('saarthi_appointments');
-        if (savedAppts) {
-          const appts = JSON.parse(savedAppts);
-          const updated = appts.map(a => {
-            if (a.status.includes('Pending')) {
-              return { ...a, status: 'Confirmed 🟢' };
-            }
-            return a;
-          });
-          localStorage.setItem('saarthi_appointments', JSON.stringify(updated));
-        }
-      } catch (err) {
-        console.error(err);
-      }
+      setBookingNotice('Returned from Stripe Checkout. Payment verification is still pending.');
       // Remove query parameters from URL for clean display
       window.history.replaceState({}, document.title, window.location.pathname);
     }
@@ -91,97 +102,118 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
   const [paymentModalData, setPaymentModalData] = useState(null);
   const [paymentTab, setPaymentTab] = useState('upi'); // 'upi' or 'stripe'
 
-  const handleDoctorPayment = (doctorName, amount) => {
+  const handleDoctorPayment = (doctor, amount) => {
     if (!isLoggedIn) {
       onRequireAuth();
       return;
     }
-    setPaymentModalData({ doctorName, amount });
-    setPaymentSuccess(false);
+    setPaymentModalData({ providerId: doctor.providerId, doctorName: doctor.name, amount });
+    setAppointmentSaved(false);
+    setBookingNotice('');
+    setBookingError('');
     setPaymentTab('upi');
   };
 
   const handleConfirmPayment = async (method) => {
-    const matchedDoc = doctors.find(d => d.name === paymentModalData.doctorName);
-    const appointmentRef = `APT-${Math.floor(1000 + Math.random() * 9000)}-${(matchedDoc?.city || 'BHOPAL').toUpperCase()}`;
+    const matchedDoc = doctors.find(d => d.providerId === paymentModalData.providerId);
     const docName = paymentModalData.doctorName;
-    const docSpec = matchedDoc?.speciality || 'Gynecologist';
-    const clinic = matchedDoc?.clinic || 'Saarthi Telehealth Clinic';
+    const docSpec = matchedDoc?.speciality || matchedDoc?.searchCategory || 'Healthcare provider';
+    const clinic = matchedDoc?.address || matchedDoc?.name || 'OpenStreetMap provider';
     const feeAmt = paymentModalData.amount;
-    const apptStatus = method === 'upi' ? 'Paid via UPI QR 🟢' : 'Paid via Stripe 🟢';
-    const dateStr = new Date().toLocaleDateString('en-IN', { dateStyle: 'medium' });
-
-    // 1. Save locally for immediate offline UI speed
-    try {
-      const savedAppts = localStorage.getItem('saarthi_appointments');
-      const appts = savedAppts ? JSON.parse(savedAppts) : [];
-      
-      const newAppt = {
-        id: appointmentRef,
-        doctorName: docName,
-        speciality: docSpec,
-        timing: matchedDoc?.timing || '10 AM - 1 PM',
-        fee: feeAmt,
-        status: apptStatus,
-        date: dateStr
-      };
-      
-      localStorage.setItem('saarthi_appointments', JSON.stringify([newAppt, ...appts]));
-    } catch (err) {
-      console.error("Error storing appointment locally:", err);
-    }
-
-    // 2. Save into Spring Boot Database Table (`appointments`)
+    const dateStr = new Date().toISOString().slice(0, 10);
     const token = localStorage.getItem('saarthi_token');
-    if (token && isLoggedIn) {
-      try {
-        await fetch(`${API_BASE}/appointments/book`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            appointmentRef: appointmentRef,
-            doctorName: docName,
-            specialty: docSpec,
-            clinicName: clinic,
-            date: dateStr,
-            timeSlot: matchedDoc?.timing || '10:00 AM',
-            mode: selectedMode === 'visit' ? 'Visit Doctor Nearby' : 'Online Video Call',
-            status: apptStatus,
-            fee: feeAmt
-          })
-        });
-      } catch (e) {
-        console.warn("Appointment DB sync notice:", e);
-      }
+
+    if (!token || !isLoggedIn) {
+      setBookingError('Please sign in before creating an appointment.');
+      onRequireAuth();
+      return;
     }
 
-    // 3. Connect to Stripe Backend Checkout Session API Endpoint if chosen
+    setBookingError('');
+    setBookingNotice('Saving the appointment...');
+
+    let savedAppointment;
+    try {
+      const appointmentResponse = await fetch(`${API_BASE}/appointments/book`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          providerId: matchedDoc?.providerId,
+          doctorName: docName,
+          specialty: docSpec,
+          clinicName: clinic,
+          date: dateStr,
+          timeSlot: 'Demo scheduling pending',
+          mode: selectedMode === 'visit' ? 'Visit Doctor Nearby' : 'Online Video Call'
+        })
+      });
+
+      if (!appointmentResponse.ok) {
+        if (appointmentResponse.status === 401 || appointmentResponse.status === 403) {
+          throw new Error('Your session is not authorized. Please sign in again.');
+        }
+        throw new Error(await readApiErrorMessage(
+          appointmentResponse,
+          `Appointment could not be saved (${appointmentResponse.status}).`
+        ));
+      }
+
+      savedAppointment = await appointmentResponse.json();
+    } catch (error) {
+      setBookingNotice('');
+      setBookingError(error.message || 'The appointment could not be saved. Please try again.');
+      setPaymentModalData(null);
+      return;
+    }
+
+    // localStorage is only a cache of the canonical response returned by PostgreSQL.
+    try {
+      const cached = JSON.parse(localStorage.getItem('saarthi_appointments') || '[]');
+      const formatted = formatAppointmentForCache(savedAppointment);
+      const withoutDuplicate = cached.filter(a => a.appointmentRef !== savedAppointment.appointmentRef);
+      localStorage.setItem('saarthi_appointments', JSON.stringify([formatted, ...withoutDuplicate]));
+    } catch (error) {
+      console.warn('Appointment was saved, but its browser cache could not be updated:', error);
+    }
+
+    setBookingNotice(`Appointment ${savedAppointment.appointmentRef} saved as pending payment.`);
+    if (selectedMode === 'video') {
+      setRoomId(savedAppointment.appointmentRef);
+    }
+
+    // Stripe starts only after PostgreSQL has returned the canonical appointment.
     if (method === 'stripe' || method === 'stripe_inapp' || method === 'stripe_external') {
       try {
-        const headers = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        
         const response = await fetch(`${API_BASE}/payment/checkout`, {
           method: 'POST',
-          headers: headers,
-          body: JSON.stringify({ doctorName: docName, amount: feeAmt })
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ appointmentRef: savedAppointment.appointmentRef })
         });
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.checkoutUrl) {
-            window.location.href = data.checkoutUrl;
-            return;
-          }
+
+        if (!response.ok) {
+          throw new Error(await readApiErrorMessage(
+            response,
+            `Stripe Checkout could not be created (${response.status}).`
+          ));
         }
-      } catch (e) {
-        console.log("Stripe backend session notice, showing confirmation modal.");
+        const data = await response.json();
+        if (!data.checkoutUrl) {
+          throw new Error('Stripe did not return a checkout URL.');
+        }
+        window.location.href = data.checkoutUrl;
+        return;
+      } catch (error) {
+        setBookingNotice('');
+        setBookingError(`Appointment ${savedAppointment.appointmentRef} remains pending, but checkout failed. ${error.message}`);
+        setPaymentModalData(null);
+        return;
       }
     }
 
-    setPaymentSuccess(true);
+    setAppointmentSaved(true);
+    setBookingNotice(`Appointment ${savedAppointment.appointmentRef} is saved. UPI payment is not verified and remains pending.`);
     setTimeout(() => {
-      setPaymentSuccess(false);
+      setAppointmentSaved(false);
       setPaymentModalData(null);
       setActiveSection('consult');
     }, 2500);
@@ -192,95 +224,93 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
   const remoteVideoRef = useRef(null);
   const peerConnectionRef = useRef(null);
   const socketRef = useRef(null);
-
-  const generateSimulatedDoctors = (city, specialty) => {
-    let specName = "Gynecologist";
-    let clinicSuffixes = ["Women Clinic", "Care & Maternity Hospital", "Maternity Centre", "Health Clinic", "Ankur Clinic"];
-    if (specialty === 'maternity') {
-      specName = "Maternity Specialist";
-      clinicSuffixes = ["Maternity Hospital", "Motherhood Maternity Centre", "Vatsalya Home", "Hope Hospital", "Maternity Care Hub"];
-    } else if (specialty === 'psychologist') {
-      specName = "Maternity Psychologist";
-      clinicSuffixes = ["Mind & Postpartum Wellness", "Postpartum Mind Centre", "Nirvana Mental Care", "Vani Mind Clinic", "Mental Wellness Clinic"];
-    }
-
-    const firstNames = ["Dr. Smita", "Dr. Neha", "Dr. Preeti", "Dr. Shalini", "Dr. Alaka", "Dr. Kirti", "Dr. Ananya", "Dr. Sunita", "Dr. Rashmi", "Dr. Sandhya", "Dr. Ritu"];
-    const lastNames = ["Agrawal", "Jain", "Verma", "Gupta", "Sharma", "Saxena", "Mishra", "Deshmukh", "Sen", "Dave", "Bhargava"];
-    
-    const getSeed = (str) => {
-      let hash = 0;
-      for (let i = 0; i < str.length; i++) {
-        hash = str.charCodeAt(i) + ((hash << 5) - hash);
-      }
-      return Math.abs(hash);
-    };
-    
-    const seed = getSeed(city + specName);
-    const result = [];
-    
-    for (let i = 0; i < 5; i++) {
-      const fnIdx = (seed + i * 7) % firstNames.length;
-      const lnIdx = (seed + i * 13) % lastNames.length;
-      const clinicIdx = (seed + i * 3) % clinicSuffixes.length;
-      const rating = (4.5 + ((seed + i * 9) % 5) * 0.1).toFixed(1);
-      const distance = (1.1 + ((seed + i * 17) % 50) * 0.1).toFixed(1);
-      const fee = 300 + ((seed + i * 4) % 5) * 100;
-      const timing = (9 + (i % 3)) + " AM - " + (2 + (i % 4)) + " PM";
-      
-      // Coordinates offset from map center (250, 200) inside SVG
-      const latOffset = -0.015 + ((seed + i * 23) % 30) * 0.001;
-      const lngOffset = -0.015 + ((seed + i * 29) % 30) * 0.001;
-
-      result.push({
-        id: `doc-${city}-${specialty}-${i}`,
-        name: `${firstNames[fnIdx]} ${lastNames[lnIdx]}`,
-        rating: parseFloat(rating),
-        clinic: `${lastNames[lnIdx]} ${clinicSuffixes[clinicIdx]}`,
-        city: city,
-        timing: timing,
-        speciality: specName,
-        distance: parseFloat(distance),
-        fee: fee,
-        latOffset: latOffset,
-        lngOffset: lngOffset
-      });
-    }
-    return result;
-  };
+  const localStreamRef = useRef(null);
+  const pendingIceCandidatesRef = useRef([]);
+  const offerCreatedRef = useRef(false);
 
   const filterDoctorsList = async (city, customCoords) => {
     let specialtyKey = 'gyno';
     if (selectedSpecialty === 'maternity') specialtyKey = 'maternity';
     if (selectedSpecialty === 'psychologist') specialtyKey = 'psychologist';
-    
-    const localDocs = generateSimulatedDoctors(city, specialtyKey);
-    setDoctors(localDocs);
 
-    // Call Backend Spring Boot DoctorController (@Cacheable + Haversine distance algorithm) with real dynamic GPS coordinates
-    const latitude = customCoords?.lat || location?.lat || 26.2183;
-    const longitude = customCoords?.lng || location?.lng || 78.1828;
+    const specialtyLabel = specialtyKey === 'maternity'
+      ? 'Maternity provider'
+      : specialtyKey === 'psychologist'
+        ? 'Perinatal psychologist'
+        : 'Gynecologist';
+
+    setDoctors([]);
+    setDoctorResultSource('loading');
+    setDoctorResultNotice('Searching OpenStreetMap for nearby healthcare providers...');
+
+    // Prefer coordinates supplied by the current GPS callback. React state may still
+    // contain the previous location immediately after setLocation runs.
+    const cityCoordinates = getCityCoordinates(city);
+    const latitude = customCoords?.lat ?? location?.lat ?? cityCoordinates.lat;
+    const longitude = customCoords?.lng ?? location?.lng ?? cityCoordinates.lng;
+    const token = localStorage.getItem('saarthi_token');
+
+    if (!token) {
+      setErrorMsg('Your session is missing. Please sign in again to search the doctor catalogue.');
+      setDoctorResultSource('error');
+      setDoctorResultNotice('Provider search was not attempted because authentication is required.');
+      return;
+    }
 
     try {
-      const res = await fetch(`${API_BASE}/gynecologists?lat=${latitude}&lng=${longitude}&radius_km=100`);
-      if (res.ok) {
-        const backendDocs = await res.json();
-        if (Array.isArray(backendDocs) && backendDocs.length > 0) {
-          const mapped = backendDocs.map(d => ({
-            id: String(d.id || d.name),
-            name: d.name,
-            rating: d.rating || 4.8,
-            clinic: d.clinic || 'Specialty Clinic',
-            city: d.city || city,
-            timing: d.timing || '10 AM - 4 PM',
-            speciality: d.speciality || 'Gynecologist',
-            distance: d.distance_km || 1.8,
-            fee: 400
-          }));
-          setDoctors(mapped);
+      const res = await fetch(`${API_BASE}/gynecologists?lat=${latitude}&lng=${longitude}&radius_km=25&specialty=${encodeURIComponent(specialtyKey)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          throw new Error('AUTHENTICATION_REQUIRED');
         }
+        throw new Error(await readApiErrorMessage(
+          res,
+          `Nearby provider search failed (${res.status}).`
+        ));
+      }
+
+      const backendDocs = await res.json();
+      if (!Array.isArray(backendDocs)) {
+        throw new Error('INVALID_DOCTOR_RESPONSE');
+      }
+
+      if (backendDocs.length > 0) {
+        const mapped = backendDocs.map(d => ({
+          id: d.providerId,
+          providerId: d.providerId,
+          name: d.name,
+          address: d.address,
+          latitude: d.latitude,
+          longitude: d.longitude,
+          distance: d.distanceKm,
+          providerType: d.providerType,
+          speciality: d.specialty,
+          phone: d.phone,
+          website: d.website?.startsWith('http://') || d.website?.startsWith('https://') ? d.website : null,
+          osmUrl: d.osmUrl,
+          searchCategory: specialtyLabel
+        }));
+        setDoctors(mapped);
+        setDoctorResultSource('osm');
+        setDoctorResultNotice('Nearby healthcare records from OpenStreetMap. Listings are community-maintained and not Saarthi-verified.');
+      } else {
+        setDoctorResultSource('empty');
+        setDoctorResultNotice('OpenStreetMap returned no matching providers within 25 km.');
       }
     } catch (e) {
-      console.warn("Backend DoctorController notice, using fallback: ", e);
+      console.warn("OpenStreetMap provider search failed: ", e);
+      setDoctors([]);
+      setDoctorResultSource('error');
+      if (e.message === 'AUTHENTICATION_REQUIRED') {
+        setErrorMsg('Your session could not be authenticated. Please sign in again.');
+        setDoctorResultNotice('OpenStreetMap results are unavailable because backend authentication failed.');
+      } else {
+        setErrorMsg(e.message || 'The nearby provider search is currently unavailable.');
+        setDoctorResultNotice('No provider cards are shown because the OpenStreetMap search failed.');
+      }
     }
   };
 
@@ -304,16 +334,8 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
           });
           if (res.ok) {
             const dbAppts = await res.json();
-            if (Array.isArray(dbAppts) && dbAppts.length > 0) {
-              const formatted = dbAppts.map(a => ({
-                id: a.appointmentRef || `APT-${a.id}`,
-                doctorName: a.doctorName,
-                speciality: a.specialty,
-                timing: a.timeSlot || '10:00 AM',
-                fee: a.fee || 400,
-                status: a.status || 'Confirmed 🟢',
-                date: a.date
-              }));
+            if (Array.isArray(dbAppts)) {
+              const formatted = dbAppts.map(formatAppointmentForCache);
               localStorage.setItem('saarthi_appointments', JSON.stringify(formatted));
             }
           }
@@ -334,36 +356,6 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
     triggerGPSScanFlow();
   };
 
-  const createSyntheticStream = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 640;
-    canvas.height = 480;
-    const ctx = canvas.getContext('2d');
-    
-    let frame = 0;
-    const drawFrame = () => {
-      frame++;
-      ctx.fillStyle = '#064e3b';
-      ctx.fillRect(0, 0, 640, 480);
-      
-      // Animated pulse wave
-      ctx.fillStyle = '#10b981';
-      ctx.beginPath();
-      ctx.arc(320, 240, 50 + Math.sin(frame * 0.05) * 10, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 18px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('Patient Video Stream (HD)', 320, 245);
-
-      requestAnimationFrame(drawFrame);
-    };
-    drawFrame();
-    
-    return canvas.captureStream(30);
-  };
-
   // Attach real local camera stream to video element when in call
   useEffect(() => {
     if (inCall && localStream && localVideoRef.current) {
@@ -372,81 +364,15 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
     }
   }, [inCall, localStream]);
 
-  // WebRTC Peer Connection logic with Spring Boot WebSocket Signaling
-  const setupWebSocketSignaling = (stream) => {
-    try {
-      const envWsUrl = import.meta.env.VITE_WS_SIGNALING_URL;
-      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsHost = window.location.host || 'localhost:5173';
-      const wsUrl = envWsUrl || `${wsProtocol}//${wsHost}/ws/signaling`;
-      
-      const socket = new WebSocket(wsUrl);
-      socketRef.current = socket;
-
-      socket.onopen = () => {
-        console.log("WebRTC WebSocket Signaling Connected to Spring Boot server:", wsUrl);
-        initiatePeerConnection(stream);
-      };
-
-      socket.onmessage = async (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'offer') {
-            await handleOffer(data.offer);
-          } else if (data.type === 'answer') {
-            await handleAnswer(data.answer);
-          } else if (data.type === 'candidate') {
-            await handleIceCandidate(data.candidate);
-          }
-        } catch (e) {
-          console.warn("Signaling message handling exception:", e);
-        }
-      };
-
-      socket.onerror = (err) => {
-        console.warn("Signaling WebSocket notice (peer mode active):", err);
-        initiatePeerConnection(stream);
-      };
-    } catch (e) {
-      console.warn("Fallback to local peer mode:", e);
-      initiatePeerConnection(stream);
-    }
+  const sendSignal = (type, payload = {}) => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify({ type, callId: roomId.trim().toUpperCase(), payload }));
+    return true;
   };
 
-  const startVideoCall = async () => {
-    if (!isLoggedIn) {
-      onRequireAuth();
-      return;
-    }
-    setErrorMsg('');
-
-    try {
-      // 1. Request real camera and microphone from browser
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }, 
-        audio: true 
-      });
-      setLocalStream(stream);
-      setInCall(true);
-      setupWebSocketSignaling(stream);
-    } catch (e) {
-      console.warn("Retrying real camera stream without audio constraint:", e);
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        setLocalStream(stream);
-        setInCall(true);
-        setupWebSocketSignaling(stream);
-      } catch (err) {
-        console.error("Camera hardware access unavailable or blocked:", err);
-        setErrorMsg("Unable to access real camera. Please verify your browser camera permissions in settings.");
-        setInCall(true);
-        setRemoteStream(true);
-      }
-    }
-  };
-
-  const initiatePeerConnection = (stream) => {
-    if (!stream) return;
+  const createPeerConnection = (stream) => {
+    if (!stream || peerConnectionRef.current) return peerConnectionRef.current;
     const pcConfig = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -462,52 +388,65 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
 
     // Handle incoming remote tracks from Doctor / Peer
     pc.ontrack = (event) => {
-      console.log("Received remote doctor/peer track:", event.streams[0]);
-      setRemoteStream(event.streams[0]);
+      const incomingStream = event.streams[0] || new MediaStream([event.track]);
+      setRemoteStream(incomingStream);
+      setCallStatus('Demo peer connected. Media is flowing through WebRTC.');
       if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = event.streams[0];
+        remoteVideoRef.current.srcObject = incomingStream;
       }
     };
 
     // Send local ICE candidates
     pc.onicecandidate = (event) => {
-      if (event.candidate && socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify({
-          type: 'candidate',
-          candidate: event.candidate
-        }));
+      if (event.candidate) sendSignal('ICE_CANDIDATE', event.candidate.toJSON());
+    };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed') {
+        setCallStatus('The peer connection failed. End the call and try again, preferably on a less restrictive network.');
+      } else if (pc.connectionState === 'disconnected') {
+        setCallStatus('The demo peer disconnected. Waiting briefly for the connection to recover.');
+      } else if (pc.connectionState === 'connected') {
+        setCallStatus('Demo peer connected. Media is flowing through WebRTC.');
       }
     };
+    return pc;
+  };
 
-    // Create and send SDP Offer
-    pc.createOffer()
-      .then(offer => pc.setLocalDescription(offer))
-      .then(() => {
-        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-          socketRef.current.send(JSON.stringify({
-            type: 'offer',
-            offer: pc.localDescription
-          }));
-        }
-      })
-      .catch(err => console.error("Offer creation error:", err));
+  const createAndSendOffer = async () => {
+    const pc = peerConnectionRef.current;
+    if (!pc || offerCreatedRef.current) return;
+    offerCreatedRef.current = true;
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      sendSignal('OFFER', pc.localDescription.toJSON());
+      setCallStatus('Connection offer sent. Waiting for the demo peer to answer.');
+    } catch (error) {
+      offerCreatedRef.current = false;
+      setCallStatus('Could not create the WebRTC offer. End the call and try again.');
+    }
+  };
+
+  const flushPendingIceCandidates = async () => {
+    const pc = peerConnectionRef.current;
+    if (!pc?.remoteDescription) return;
+    const candidates = pendingIceCandidatesRef.current.splice(0);
+    for (const candidate of candidates) {
+      await pc.addIceCandidate(candidate);
+    }
   };
 
   const handleOffer = async (offer) => {
     if (!peerConnectionRef.current) return;
     try {
       await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(offer));
+      await flushPendingIceCandidates();
       const answer = await peerConnectionRef.current.createAnswer();
       await peerConnectionRef.current.setLocalDescription(answer);
-      
-      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify({
-          type: 'answer',
-          answer: answer
-        }));
-      }
+      sendSignal('ANSWER', peerConnectionRef.current.localDescription.toJSON());
+      setCallStatus('Connection answer sent. Establishing the peer-to-peer media path...');
     } catch (e) {
-      console.error("Error handling SDP offer:", e);
+      setCallStatus('The received WebRTC offer could not be processed.');
     }
   };
 
@@ -515,39 +454,166 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
     if (!peerConnectionRef.current) return;
     try {
       await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+      await flushPendingIceCandidates();
+      setCallStatus('Answer received. Establishing the peer-to-peer media path...');
     } catch (e) {
-      console.error("Error handling SDP answer:", e);
+      setCallStatus('The received WebRTC answer could not be processed.');
     }
   };
 
   const handleIceCandidate = async (candidate) => {
     if (!peerConnectionRef.current) return;
     try {
-      await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+      const iceCandidate = new RTCIceCandidate(candidate);
+      if (!peerConnectionRef.current.remoteDescription) {
+        pendingIceCandidatesRef.current.push(iceCandidate);
+        return;
+      }
+      await peerConnectionRef.current.addIceCandidate(iceCandidate);
     } catch (e) {
-      console.error("Error adding remote ICE candidate:", e);
+      setCallStatus('A network candidate could not be applied. The call may still connect using another candidate.');
+    }
+  };
+
+  const cleanupCall = (notifyPeer = true) => {
+    if (notifyPeer) sendSignal('LEAVE');
+    const stream = localStreamRef.current;
+    if (stream) stream.getTracks().forEach(track => track.stop());
+    localStreamRef.current = null;
+    setLocalStream(null);
+    setRemoteStream(null);
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+    pendingIceCandidatesRef.current = [];
+    offerCreatedRef.current = false;
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.ontrack = null;
+      peerConnectionRef.current.onicecandidate = null;
+      peerConnectionRef.current.onconnectionstatechange = null;
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    if (socketRef.current) {
+      socketRef.current.onopen = null;
+      socketRef.current.onmessage = null;
+      socketRef.current.onerror = null;
+      socketRef.current.onclose = null;
+      socketRef.current.close();
+      socketRef.current = null;
+    }
+    setInCall(false);
+    setMicEnabled(true);
+    setVideoEnabled(true);
+  };
+
+  const setupWebSocketSignaling = (stream, token) => {
+    const envWsUrl = import.meta.env.VITE_WS_SIGNALING_URL;
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsHost = window.location.host || 'localhost:5173';
+    const wsUrl = envWsUrl || `${wsProtocol}//${wsHost}/ws/signaling`;
+    const socket = new WebSocket(wsUrl);
+    socketRef.current = socket;
+
+    socket.onopen = () => {
+      createPeerConnection(stream);
+      setCallStatus('Authenticating and joining the appointment room...');
+      sendSignal('JOIN', { token });
+    };
+    socket.onmessage = async (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.callId && data.callId !== roomId.trim().toUpperCase()) return;
+        switch (data.type) {
+          case 'JOINED':
+            setCallStatus(data.payload?.peerCount === 2
+              ? 'Joined. Waiting for the first participant to create the offer...'
+              : 'Joined securely. Waiting for a second authenticated demo session...');
+            break;
+          case 'PEER_READY':
+            await createAndSendOffer();
+            break;
+          case 'OFFER':
+            await handleOffer(data.payload);
+            break;
+          case 'ANSWER':
+            await handleAnswer(data.payload);
+            break;
+          case 'ICE_CANDIDATE':
+            await handleIceCandidate(data.payload);
+            break;
+          case 'PEER_LEFT':
+            setRemoteStream(null);
+            if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+            setCallStatus('The other demo session left the call.');
+            break;
+          case 'ERROR':
+            setErrorMsg(data.payload?.message || 'The signaling server rejected the request.');
+            setCallStatus('Unable to join the consultation room.');
+            cleanupCall(false);
+            break;
+          default:
+            break;
+        }
+      } catch (e) {
+        setCallStatus('A signaling message could not be processed safely.');
+      }
+    };
+    socket.onerror = () => {
+      setErrorMsg('The video signaling server is unavailable. Please try again later.');
+      setCallStatus('Signaling connection failed.');
+      cleanupCall(false);
+    };
+    socket.onclose = () => {
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+        setCallStatus('Signaling connection closed. End the call before trying again.');
+      }
+    };
+  };
+
+  const startVideoCall = async () => {
+    if (!isLoggedIn) {
+      onRequireAuth();
+      return;
+    }
+    const token = localStorage.getItem('saarthi_token');
+    const normalizedCallId = roomId.trim().toUpperCase();
+    if (!token) {
+      setErrorMsg('Your login session is missing. Please sign in again.');
+      return;
+    }
+    if (!/^APT-[A-Z0-9]{8}$/.test(normalizedCallId)) {
+      setErrorMsg('Enter a valid online-video appointment reference, for example APT-12AB34CD.');
+      return;
+    }
+    setRoomId(normalizedCallId);
+    setErrorMsg('');
+    setCallStatus('Requesting camera and microphone access...');
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+        audio: true
+      });
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+      setInCall(true);
+      setupWebSocketSignaling(stream, token);
+    } catch (error) {
+      const permissionDenied = error?.name === 'NotAllowedError' || error?.name === 'SecurityError';
+      const deviceMissing = error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError';
+      setErrorMsg(permissionDenied
+        ? 'Camera or microphone permission was denied. Allow both permissions and try again.'
+        : deviceMissing
+          ? 'No usable camera or microphone was found on this device.'
+          : 'Camera or microphone access failed. Check the device and browser settings, then try again.');
+      setCallStatus('Media access failed.');
     }
   };
 
   const endVideoCall = () => {
-    setInCall(false);
-    if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
-      setLocalStream(null);
-    }
-    setRemoteStream(null);
+    cleanupCall(true);
 
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-
-    if (socketRef.current) {
-      socketRef.current.close();
-      socketRef.current = null;
-    }
-
-    // Trigger Post-Consultation Rating & Feedback Modal
     setShowRatingModal(true);
     setRatingStars(5);
     setSelectedBadges([]);
@@ -575,42 +641,54 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
     }
   };
 
-  const mockPeerStream = () => {
-    setRemoteStream(true);
-  };
+  useEffect(() => () => cleanupCall(false), []);
 
   const triggerGPSScanFlow = () => {
     setShowLocationModal(false);
     setIsScanningLocation(true);
     setScanProgress(0);
     setScanStatusText('📡 Initializing geospatial scanner...');
+    setLoadingLoc(true);
+    setErrorMsg('');
 
     // Call geolocation API to scan coordinates
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           const { latitude, longitude } = position.coords;
-          setLocation({ lat: latitude, lng: longitude });
+          const freshCoordinates = { lat: latitude, lng: longitude };
+          setLocation(freshCoordinates);
+          let detectedCity = locationName;
 
           try {
             const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`);
+            if (!res.ok) {
+              throw new Error(`REVERSE_GEOCODING_FAILED_${res.status}`);
+            }
             const geoData = await res.json();
             if (geoData.city) {
+              detectedCity = geoData.city;
               setLocationName(geoData.city);
-              filterDoctorsList(geoData.city);
-              let querySpecialty = "Gynecologists";
-              if (selectedSpecialty === 'maternity') querySpecialty = "Maternity Specialists";
-              if (selectedSpecialty === 'psychologist') querySpecialty = "Maternity Psychologists";
-              setMapQuery(`${querySpecialty} near ${geoData.city}`);
             }
           } catch (err) {
-            console.error(err);
+            console.warn('Reverse geocoding failed; searching with GPS coordinates:', err);
+            setErrorMsg('GPS coordinates were found, but the city name could not be refreshed. The search still uses your GPS coordinates.');
+          } finally {
+            await filterDoctorsList(detectedCity, freshCoordinates);
+            setLoadingLoc(false);
           }
         },
         (error) => {
-          console.error(error);
+          console.warn('Browser geolocation failed:', error);
+          setLoadingLoc(false);
+          setErrorMsg('GPS access failed or was denied. Searching from your saved city instead.');
+          filterDoctorsList(locationName, getCityCoordinates(locationName));
         }
       );
+    } else {
+      setLoadingLoc(false);
+      setErrorMsg('This browser does not support geolocation. Searching from your saved city instead.');
+      filterDoctorsList(locationName, getCityCoordinates(locationName));
     }
 
     // Start 3.5 seconds progression animation
@@ -627,7 +705,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
       } else if (currentProgress < 75) {
         setScanStatusText('📍 Detecting address and location details...');
       } else if (currentProgress < 100) {
-        setScanStatusText('🔍 Searching nearby verified female specialists...');
+        setScanStatusText('🔍 Searching nearby OpenStreetMap healthcare records...');
       } else {
         clearInterval(interval);
         setTimeout(() => {
@@ -645,17 +723,11 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
       return;
     }
 
-    // Initialize list based on user city
-    filterDoctorsList(locationName);
-    
-    let querySpecialty = "Gynecologists";
-    if (selectedSpecialty === 'maternity') querySpecialty = "Maternity Specialists";
-    if (selectedSpecialty === 'psychologist') querySpecialty = "Maternity Psychologists";
-    setMapQuery(`${querySpecialty} near ${locationName}`);
-
     if (selectedMode === 'video') {
       setActiveSection('consult');
     } else {
+      // Wait for GPS or an explicit saved-city choice so an older request
+      // cannot race with and overwrite the fresh GPS-based result.
       setShowLocationModal(true);
     }
   };
@@ -673,14 +745,15 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
             <div className="space-y-2">
               <h3 className="text-xl font-black text-warm-850">GPS Location Access Required</h3>
               <p className="text-sm font-semibold text-warm-500 leading-relaxed">
-                Saarthi GynConnect requires GPS access to scan and identify verified gynecologists and clinics closest to your real-time coordinates.
+                Saarthi GynConnect uses GPS coordinates to search nearby community-maintained OpenStreetMap healthcare records.
               </p>
             </div>
             <div className="flex gap-4 pt-2">
               <button 
                 onClick={() => {
                   setShowLocationModal(false);
-                  setActiveSection('nearby'); // Fallback direct load
+                  filterDoctorsList(locationName, getCityCoordinates(locationName));
+                  setActiveSection('nearby');
                 }}
                 className="flex-1 py-3 bg-warm-100 hover:bg-warm-150 text-warm-700 font-extrabold rounded-xl transition-all text-sm cursor-pointer border border-warm-200"
               >
@@ -741,11 +814,11 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
       <div className="bg-white border border-[#ECE8F5] rounded-[20px] p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xs text-left">
         <div className="space-y-2 max-w-xl">
           <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-[#3B826E] bg-[#A9D8C8]/20 px-3 py-1 rounded-full border border-[#A9D8C8]/30">
-            🩺 Certified Telehealth & Gynecologists
+            🩺 OpenStreetMap Discovery & Demo Telehealth
           </span>
           <h2 className="font-outfit text-2xl sm:text-3xl font-black text-[#2D2A4A]">GynConnect Telehealth</h2>
           <p className="text-xs sm:text-sm text-[#5F6473] leading-relaxed">
-            Connect with verified gynecologists, maternity specialists, and counselors near you for video calls or clinic visits.
+            Explore nearby healthcare records returned through OpenStreetMap's Overpass service.
           </p>
           {activeSection !== 'onboarding' && (
             <button 
@@ -766,10 +839,22 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
         />
       </div>
 
-      {paymentSuccess && (
+      {appointmentSaved && (
         <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl text-xs sm:text-sm font-bold flex gap-2 items-center leading-relaxed text-left animate-in slide-in-from-top duration-300">
           <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-          <span>Payment Successful! Your consulting appointment slot has been verified and confirmed.</span>
+          <span>Appointment saved in Saarthi. Payment remains unverified, and the OpenStreetMap-listed provider does not receive it automatically.</span>
+        </div>
+      )}
+
+      {bookingNotice && (
+        <div className="p-4 bg-blue-50 border border-blue-200 text-blue-800 rounded-2xl text-xs font-bold text-left">
+          {bookingNotice}
+        </div>
+      )}
+
+      {bookingError && (
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl text-xs font-bold text-left">
+          {bookingError}
         </div>
       )}
 
@@ -787,7 +872,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
           <div className="text-center space-y-2">
             <div className="w-14 h-14 bg-[#B6A8F8]/15 text-[#6D5BD0] rounded-full flex items-center justify-center text-3xl mx-auto border border-[#B6A8F8]/30">🩺</div>
             <h3 className="text-2xl sm:text-3xl font-black text-[#2D2A4A] font-outfit">Specify Your Consult Requirements</h3>
-            <p className="text-xs sm:text-sm font-normal text-[#5F6473]">Select what type of care you need to filter and find real verified doctors.</p>
+            <p className="text-xs sm:text-sm font-normal text-[#5F6473]">Select what type of care you need to search nearby OpenStreetMap records.</p>
           </div>
 
           {/* Specialty selections */}
@@ -902,7 +987,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
           <div className="flex justify-between items-center pb-2 border-b border-teal-100/50">
             <h3 className="font-outfit text-sm font-extrabold text-teal-950 flex items-center gap-1.5">
               <MapPin className="w-4 h-4 text-teal-700" />
-              <span>Verified Female Specialists near {locationName}</span>
+              <span>Healthcare Provider Results near {locationName}</span>
             </h3>
             <button 
               onClick={handleUseLocation}
@@ -912,6 +997,18 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
               {loadingLoc ? 'Updating Location...' : 'Change Location'}
             </button>
           </div>
+
+          {doctorResultNotice && (
+            <div className={`rounded-xl border px-4 py-3 text-xs font-semibold ${
+              doctorResultSource === 'osm'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : doctorResultSource === 'error'
+                  ? 'border-rose-200 bg-rose-50 text-rose-800'
+                  : 'border-amber-200 bg-amber-50 text-amber-800'
+            }`}>
+              {doctorResultNotice}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 text-left items-stretch">
             
@@ -937,126 +1034,101 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                         <div className="w-9 h-9 rounded-lg bg-teal-50 text-teal-800 flex items-center justify-center border border-teal-100/60">
                           <User className="w-4.5 h-4.5 text-teal-800" />
                         </div>
-                        <div className="flex items-center gap-1 text-[10px] bg-amber-50 text-amber-800 font-extrabold border border-amber-200/50 px-2.5 py-0.5 rounded-full shadow-3xs">
-                          <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-                          <span>{doc.rating}</span>
-                        </div>
+                        <span className="text-[9px] font-bold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-100 px-2 py-1 rounded-full">
+                          OSM record
+                        </span>
                       </div>
 
                       <div>
                         <h4 className="font-outfit font-extrabold text-teal-950 text-sm">{doc.name}</h4>
-                        <p className="text-[10px] text-teal-750 font-extrabold tracking-wide uppercase mt-0.5">{doc.speciality}</p>
-                        <p className="text-xs text-muted-foreground mt-1">{doc.clinic} • {doc.city}</p>
+                        {doc.providerType && (
+                          <p className="text-[10px] text-teal-750 font-extrabold tracking-wide uppercase mt-0.5">
+                            {doc.providerType.replaceAll('_', ' ')}
+                          </p>
+                        )}
+                        {doc.speciality && (
+                          <p className="text-[10px] text-[#5F6473] mt-1">
+                            OSM specialty: {doc.speciality.replaceAll(';', ', ').replaceAll('_', ' ')}
+                          </p>
+                        )}
+                        {doc.address && <p className="text-xs text-muted-foreground mt-1">{doc.address}</p>}
+                        {doc.phone && <p className="text-[10px] text-[#5F6473] mt-1">Phone: {doc.phone}</p>}
+                        {doc.website && (
+                          <a href={doc.website} target="_blank" rel="noreferrer" className="text-[10px] text-[#6D5BD0] underline mt-1 inline-block">
+                            Provider website
+                          </a>
+                        )}
                       </div>
                     </div>
 
                     <div className="mt-4 border-t border-[#ECE8F5] pt-3.5 space-y-2.5">
                       <div className="flex justify-between items-center text-[10px] sm:text-xs font-medium text-[#5F6473]">
-                        <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-[#6D5BD0]" /> {doc.timing}</span>
+                        <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-[#6D5BD0]" /> Availability not provided</span>
                         <span className="font-bold text-[#3B826E] bg-[#A9D8C8]/20 px-2.5 py-0.5 rounded-full border border-[#A9D8C8]/30 flex items-center gap-1 text-[10px]">
                           <MapPin className="w-3 h-3 text-[#3B826E]" /> {doc.distance} km away
                         </span>
                       </div>
                       <button 
-                        onClick={() => handleDoctorPayment(doc.name, doc.fee || 500)}
+                        onClick={() => handleDoctorPayment(doc, SAARTHI_DEMO_CONSULTATION_AMOUNT)}
                         className="w-full py-2.5 bg-[#6D5BD0] hover:bg-[#5b4ab9] text-white rounded-xl font-bold text-xs shadow-xs transition-colors text-center flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <CreditCard className="w-3.5 h-3.5" />
-                        <span>Pay & Book Appointment (₹{doc.fee || 500})</span>
+                        <span>Book Saarthi Demo Consultation (₹{SAARTHI_DEMO_CONSULTATION_AMOUNT})</span>
                       </button>
                       <button 
                         onClick={() => {
                           setSelectedMapDoctor(doc);
-                          setMapQuery(`${doc.name}, ${doc.clinic}, ${doc.city}`);
-                          setMapProvider('google');
                         }}
                         className="w-full py-2 bg-white hover:bg-[#F5F3FA] text-[#2D2A4A] rounded-xl font-bold text-[11px] border border-[#6D5BD0] transition-colors text-center flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <MapPin className="w-3.5 h-3.5 text-[#6D5BD0]" />
-                        <span>View Clinic Pin on Map</span>
+                        <span>Show on OpenStreetMap</span>
                       </button>
+                      {doc.osmUrl && (
+                        <a
+                          href={doc.osmUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block text-center text-[10px] font-bold text-[#5F6473] hover:text-[#2D2A4A] underline"
+                        >
+                          Open exact OSM record
+                        </a>
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* Right Side: Fully Dynamic Interactive Map (Spans 7 columns) */}
+            {/* Right Side: OpenStreetMap view (Spans 7 columns) */}
             <div className="lg:col-span-7 relative bg-white border border-[#ECE8F5] rounded-[24px] overflow-hidden min-h-[500px] shadow-xs flex flex-col justify-between">
-              
-              {/* Map Floating Controls & Provider Switcher */}
-              <div className="absolute top-4 left-4 right-4 z-10 flex flex-col sm:flex-row gap-2">
-                <div className="flex-1 bg-white/95 backdrop-blur-xs rounded-xl border border-[#ECE8F5] px-3.5 py-2 shadow-sm flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-[#6D5BD0] shrink-0" />
-                  <input 
-                    type="text" 
-                    value={mapQuery}
-                    onChange={(e) => setMapQuery(e.target.value)}
-                    placeholder="Search hospitals or specialists..."
-                    className="w-full bg-transparent border-none outline-none text-xs font-bold text-[#2D2A4A] placeholder:text-[#8A8FA3]"
-                  />
-                </div>
-                
-                <div className="flex items-center gap-1 bg-white/95 backdrop-blur-xs rounded-xl border border-[#ECE8F5] p-1 shadow-sm shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setMapProvider('google')}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
-                      mapProvider === 'google'
-                        ? 'bg-[#6D5BD0] text-white shadow-3xs'
-                        : 'text-[#5F6473] hover:text-[#2D2A4A]'
-                    }`}
-                  >
-                    Google Map
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMapProvider('openstreetmap')}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
-                      mapProvider === 'openstreetmap'
-                        ? 'bg-[#6D5BD0] text-white shadow-3xs'
-                        : 'text-[#5F6473] hover:text-[#2D2A4A]'
-                    }`}
-                  >
-                    OpenStreetMap
-                  </button>
-                </div>
-              </div>
+              {(() => {
+                const cityCoords = getCityCoordinates(locationName);
+                const mapLat = selectedMapDoctor?.latitude ?? location?.lat ?? cityCoords.lat;
+                const mapLng = selectedMapDoctor?.longitude ?? location?.lng ?? cityCoords.lng;
+                const delta = 0.015;
+                const bbox = `${mapLng - delta},${mapLat - delta},${mapLng + delta},${mapLat + delta}`;
+                return (
+                  <iframe
+                    title={selectedMapDoctor ? `OpenStreetMap location for ${selectedMapDoctor.name}` : `OpenStreetMap centered on ${locationName}`}
+                    width="100%"
+                    height="100%"
+                    style={{ border: 0, minHeight: '500px' }}
+                    loading="lazy"
+                    allowFullScreen
+                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${mapLat},${mapLng}`}
+                    className="w-full h-full"
+                  ></iframe>
+                );
+              })()}
 
-              {/* Dynamic Map Layers */}
-              {mapProvider === 'google' ? (
-                <iframe
-                  title="Google Maps Live Search Feed"
-                  width="100%"
-                  height="100%"
-                  style={{ border: 0, minHeight: '500px' }}
-                  loading="lazy"
-                  allowFullScreen
-                  src={`https://maps.google.com/maps?q=${encodeURIComponent(mapQuery || `Gynecologists near ${locationName}`)}&t=&z=14&ie=UTF8&iwloc=&output=embed`}
-                  className="w-full h-full"
-                ></iframe>
-              ) : (
-                (() => {
-                  const cityCoords = getCityCoordinates(locationName);
-                  return (
-                    <iframe
-                      title="OpenStreetMap Leaflet Dynamic Layer"
-                      width="100%"
-                      height="100%"
-                      style={{ border: 0, minHeight: '500px' }}
-                      loading="lazy"
-                      allowFullScreen
-                      src={`https://www.openstreetmap.org/export/embed.html?bbox=${cityCoords.bbox}&layer=mapnik&marker=${cityCoords.lat},${cityCoords.lng}`}
-                      className="w-full h-full"
-                    ></iframe>
-                  );
-                })()
-              )}
-
-              {/* Bottom Live Indicator Badge */}
               <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-xs border border-[#ECE8F5] px-3 py-1.5 rounded-xl shadow-xs text-[10px] font-bold text-[#2D2A4A] flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-[#3B826E] animate-pulse"></span>
-                <span>{mapProvider === 'google' ? `Live Clinic Pin Feed (${locationName})` : `OpenStreetMap Layer centered on ${locationName}`}</span>
+                <span>{selectedMapDoctor ? `Selected: ${selectedMapDoctor.name}` : `Map centered on ${locationName}`}</span>
+                <span>•</span>
+                <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">
+                  © OpenStreetMap contributors
+                </a>
               </div>
 
             </div>
@@ -1073,9 +1145,9 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                 📹
               </div>
               <div className="space-y-2">
-                <h3 className="text-xl font-bold text-warm-800">Instant Video Appointment</h3>
+                <h3 className="text-xl font-bold text-warm-800">WebRTC Consultation Demo</h3>
                 <p className="text-sm text-warm-500 max-w-sm mx-auto leading-relaxed">
-                  Join a secure, encrypted peer-to-peer session with an online doctor. Enter room ID to begin connection.
+                  Enter an online-video appointment reference owned by your account. For the demo, sign in to a second browser session with the same account and join the same reference.
                 </p>
               </div>
 
@@ -1085,7 +1157,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                   value={roomId} 
                   onChange={(e) => setRoomId(e.target.value)}
                   className="flex-1 px-4 py-2.5 rounded-xl border border-warm-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm bg-white"
-                  placeholder="Room ID" 
+                  placeholder="Appointment reference (APT-...)"
                 />
                 <button 
                   onClick={startVideoCall}
@@ -1102,12 +1174,12 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                 <div className="flex items-center gap-3">
                   <span className="w-3 h-3 rounded-full bg-emerald-500 animate-ping"></span>
                   <div>
-                    <p className="text-xs font-extrabold text-teal-950">✓ Encrypted Telehealth Session Active • Room ID: {roomId}</p>
-                    <p className="text-[10px] text-teal-700 font-semibold">Doctor Connected: Dr. Smita Jain (Gynecology & Maternal Specialist)</p>
+                    <p className="text-xs font-extrabold text-teal-950">WebRTC Demo Session • Call ID: {roomId}</p>
+                    <p className="text-[10px] text-teal-700 font-semibold">{callStatus}</p>
                   </div>
                 </div>
                 <span className="text-[10px] font-extrabold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-full border border-teal-150/40">
-                  🔒 P2P 256-bit Encrypted
+                  Browser-managed WebRTC security
                 </span>
               </div>
 
@@ -1125,10 +1197,10 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                   <div className="relative z-10 flex justify-between items-start">
                     <span className="text-[10px] font-extrabold text-white bg-teal-900/80 backdrop-blur-md px-3 py-1 rounded-full border border-teal-700/50 flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                      <span>Dr. Smita Jain (Live Consult)</span>
+                      <span>Authenticated Demo Peer</span>
                     </span>
                     <span className="text-[10px] font-extrabold text-teal-200 bg-black/40 backdrop-blur-xs px-2.5 py-0.5 rounded-md">
-                      HD 1080p
+                      Remote media
                     </span>
                   </div>
 
@@ -1136,26 +1208,16 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                   {!remoteStream ? (
                     <div className="relative z-10 my-auto text-center space-y-3 py-10">
                       <RefreshCw className="w-8 h-8 text-teal-300 animate-spin mx-auto" />
-                      <p className="text-xs font-extrabold text-teal-100">Connecting doctor stream...</p>
+                      <p className="text-xs font-extrabold text-teal-100">Waiting for remote WebRTC media...</p>
                     </div>
-                  ) : (
-                    <div className="relative z-10 my-auto text-center space-y-3">
-                      <div className="w-20 h-20 rounded-full bg-teal-800/80 border-2 border-teal-400 text-teal-100 flex items-center justify-center font-black text-2xl mx-auto shadow-lg backdrop-blur-md">
-                        SJ
-                      </div>
-                      <div>
-                        <h4 className="font-extrabold text-white text-sm">Dr. Smita Jain</h4>
-                        <p className="text-[11px] text-teal-200 font-semibold">Bhopal District Civil Hospital Tele-Clinic</p>
-                      </div>
-                    </div>
-                  )}
+                  ) : null}
 
                   <div className="relative z-10 flex items-center justify-between text-[11px] text-teal-200 font-semibold pt-2 border-t border-teal-800/50">
                     <span className="flex items-center gap-1">
                       <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                      <span>Audio Active</span>
+                      <span>Remote WebRTC media</span>
                     </span>
-                    <span>Consultation Room #{roomId}</span>
+                    <span>Call {roomId}</span>
                   </div>
                 </div>
 
@@ -1185,8 +1247,8 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                   )}
 
                   <div className="relative z-10 flex items-center justify-between text-[11px] text-teal-200 font-semibold pt-2 border-t border-teal-800/50">
-                    <span>Patient: Ananya Sharma</span>
-                    <span>Location: Bhopal, MP</span>
+                    <span>Your local camera</span>
+                    <span>Authenticated Saarthi session</span>
                   </div>
                 </div>
 
@@ -1270,16 +1332,16 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                 <span className="text-[9px] font-bold uppercase tracking-wider text-white/90">Saarthi Telehealth Checkout</span>
               </div>
               <h3 className="font-outfit text-base font-black text-white">{paymentModalData.doctorName}</h3>
-              <p className="text-xs text-white/90 font-medium">Total Consultation Fee: <strong className="text-white text-xs">₹{paymentModalData.amount}</strong></p>
+              <p className="text-xs text-white/90 font-medium">Saarthi demo consultation amount: <strong className="text-white text-xs">₹{paymentModalData.amount}</strong></p>
             </div>
 
             {/* Modal Content */}
-            {paymentSuccess ? (
+            {appointmentSaved ? (
               <div className="p-6 text-center space-y-3 overflow-y-auto flex-1">
                 <CheckCircle2 className="w-10 h-10 text-[#3B826E] mx-auto animate-bounce" />
-                <h4 className="font-outfit font-extrabold text-[#2D2A4A] text-sm">Payment Confirmed!</h4>
+                <h4 className="font-outfit font-extrabold text-[#2D2A4A] text-sm">Appointment Saved</h4>
                 <p className="text-xs text-[#5F6473] leading-relaxed">
-                  ✓ Appointment booked successfully. SMS appointment details sent to registered mobile <strong className="text-[#2D2A4A]">+91 98******10</strong>.
+                  The appointment is pending payment verification. This does not create a booking in the OpenStreetMap-listed provider's scheduling system.
                 </p>
               </div>
             ) : (
@@ -1330,139 +1392,28 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                       className="w-full py-2.5 bg-[#6D5BD0] hover:bg-[#5b4ab9] text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Confirm QR Payment & Book Slot</span>
+                      <span>Save Pending Appointment</span>
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-3 text-left font-sans">
-                    
-                    {/* Express Checkout Buttons */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleConfirmPayment('stripe_inapp')}
-                        className="py-2 bg-black hover:bg-gray-900 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer"
-                      >
-                        <span className="text-sm"></span>
-                        <span>Pay</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleConfirmPayment('stripe_inapp')}
-                        className="py-2 bg-[#3B826E] hover:bg-[#32705e] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer"
-                      >
-                        <span className="text-xs font-mono font-bold">{"›link"}</span>
-                      </button>
-                    </div>
-
-                    {/* OR Divider */}
-                    <div className="relative flex py-0.5 items-center">
-                      <div className="flex-grow border-t border-[#ECE8F5]"></div>
-                      <span className="flex-shrink mx-3 text-[9px] font-bold text-[#8A8FA3] uppercase tracking-widest">OR</span>
-                      <div className="flex-grow border-t border-[#ECE8F5]"></div>
-                    </div>
-
-                    <form onSubmit={(e) => { e.preventDefault(); handleConfirmPayment('stripe_inapp'); }} className="space-y-2.5">
-                      
-                      {/* Contact Information */}
-                      <div className="space-y-0.5">
-                        <label className="text-[10px] font-bold text-[#2D2A4A]">Contact information</label>
-                        <input 
-                          type="email" 
-                          required 
-                          defaultValue="ananya.sharma@example.com"
-                          placeholder="email@example.com" 
-                          className="w-full border border-[#ECE8F5] rounded-xl px-3 py-1.5 text-xs bg-white text-[#2D2A4A] focus:outline-none focus:border-[#6D5BD0] font-normal"
-                        />
+                  <div className="space-y-4 text-center font-sans">
+                    <div className="p-4 bg-[#FAF8FC] border border-[#ECE8F5] rounded-2xl text-left space-y-2">
+                      <div className="flex items-center gap-2 text-xs font-bold text-[#2D2A4A]">
+                        <ShieldCheck className="w-4 h-4 text-[#6D5BD0]" />
+                        <span>Secure Stripe-hosted checkout</span>
                       </div>
-
-                      {/* Payment Method */}
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-bold text-[#2D2A4A]">Payment method</label>
-                        
-                        <div className="border border-[#ECE8F5] rounded-2xl p-3.5 bg-white space-y-3 shadow-xs">
-                          <div className="flex items-center gap-2 text-xs font-bold text-[#2D2A4A] pb-1 border-b border-[#ECE8F5]">
-                            <CreditCard className="w-4 h-4 text-[#6D5BD0]" />
-                            <span>Card</span>
-                          </div>
-
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-bold text-[#8A8FA3]">Card information</label>
-                            
-                            {/* Unified Card Number Box */}
-                            <div className="border border-[#ECE8F5] rounded-xl overflow-hidden bg-white focus-within:border-[#6D5BD0]">
-                              <div className="relative flex items-center px-3 py-2 border-b border-[#ECE8F5]">
-                                <input 
-                                  type="text" 
-                                  required 
-                                  maxLength={19}
-                                  placeholder="1234 1234 1234 1234" 
-                                  className="w-full text-xs font-mono tracking-widest outline-none bg-transparent text-[#2D2A4A]"
-                                />
-                                <div className="flex items-center gap-1 shrink-0 pl-1">
-                                  <span className="text-[9px] font-black text-blue-700 bg-blue-50 px-1 rounded">VISA</span>
-                                  <span className="text-[9px] font-black text-red-600 bg-red-50 px-1 rounded">MC</span>
-                                  <span className="text-[9px] font-black text-cyan-700 bg-cyan-50 px-1 rounded">AMEX</span>
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-2 divide-x divide-[#ECE8F5]">
-                                <input 
-                                  type="text" 
-                                  required 
-                                  placeholder="MM / YY" 
-                                  maxLength={5}
-                                  className="px-3 py-2 text-xs font-mono text-center outline-none bg-transparent text-[#2D2A4A]"
-                                />
-                                <input 
-                                  type="password" 
-                                  required 
-                                  placeholder="CVC" 
-                                  maxLength={4}
-                                  className="px-3 py-2 text-xs font-mono text-center outline-none bg-transparent text-[#2D2A4A]"
-                                />
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Cardholder Name */}
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-[#8A8FA3]">Cardholder name</label>
-                            <input 
-                              type="text" 
-                              required 
-                              placeholder="Full name on card" 
-                              className="w-full border border-[#ECE8F5] rounded-xl px-3.5 py-2 text-xs bg-white text-[#2D2A4A] focus:outline-none focus:border-[#6D5BD0] font-normal"
-                            />
-                          </div>
-
-                          {/* Country or Region Dropdown */}
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-[#8A8FA3]">Country or region</label>
-                            <select className="w-full border border-[#ECE8F5] rounded-xl px-3 py-2 text-xs bg-white text-[#2D2A4A] focus:outline-none focus:border-[#6D5BD0] font-bold cursor-pointer">
-                              <option value="IN">India</option>
-                              <option value="US">United States</option>
-                              <option value="GB">United Kingdom</option>
-                              <option value="CA">Canada</option>
-                              <option value="AE">United Arab Emirates</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        {/* Save Info Checkbox */}
-                        <div className="flex items-center gap-2 pt-1">
-                          <input type="checkbox" id="save-info" defaultChecked className="rounded text-[#6D5BD0] focus:ring-[#6D5BD0] cursor-pointer" />
-                          <label htmlFor="save-info" className="text-[11px] font-medium text-[#5F6473] cursor-pointer">Save my information for faster checkout</label>
-                        </div>
-                      </div>
-
-                      <button 
-                        type="submit"
-                        className="w-full py-3 bg-[#6D5BD0] hover:bg-[#5b4ab9] text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-2"
-                      >
-                        <ShieldCheck className="w-4 h-4 text-white" />
-                        <span>Pay ₹{paymentModalData.amount}.00 via Stripe</span>
-                      </button>
-                    </form>
+                      <p className="text-[11px] text-[#5F6473] leading-relaxed">
+                        Saarthi does not collect card details here. Continue to Stripe's hosted page to submit the ₹{paymentModalData.amount} demo payment.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmPayment('stripe')}
+                      className="w-full py-3 bg-[#6D5BD0] hover:bg-[#5b4ab9] text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <CreditCard className="w-4 h-4 text-white" />
+                      <span>Continue to Stripe Checkout</span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -1498,7 +1449,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                       Consultation Complete
                     </span>
                     <h3 className="font-outfit text-lg font-black text-teal-950 mt-2">Rate Your Consultation</h3>
-                    <p className="text-xs text-muted-foreground">How was your video call with Dr. Smita Jain?</p>
+                    <p className="text-xs text-muted-foreground">How was your WebRTC demo session?</p>
                   </div>
                   <button 
                     onClick={() => setShowRatingModal(false)} 

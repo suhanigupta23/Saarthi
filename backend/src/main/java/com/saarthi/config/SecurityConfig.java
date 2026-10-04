@@ -1,5 +1,7 @@
 package com.saarthi.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.saarthi.exception.GlobalExceptionHandler;
 import com.saarthi.security.JwtFilter;
 import com.saarthi.security.UserDetailsServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -7,7 +9,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -21,7 +22,8 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
-import java.util.Collections;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
@@ -54,19 +56,35 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, ObjectMapper objectMapper) throws Exception {
         http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
-            .headers(headers -> headers.frameOptions(frame -> frame.disable())) // For H2 Console frames
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(new AntPathRequestMatcher("/api/auth/**")).permitAll()
-                .requestMatchers(new AntPathRequestMatcher("/api/symptoscan/**")).permitAll()
-                .requestMatchers(new AntPathRequestMatcher("/ws/signaling/**")).permitAll() // WebRTC signaling
-                .requestMatchers(new AntPathRequestMatcher("/h2-console/**")).permitAll() // H2 Console
+                // Browser WebSocket cannot set an Authorization header. The handshake is public,
+                // but SignalingHandler requires a valid JWT in JOIN before accepting signals.
+                .requestMatchers(new AntPathRequestMatcher("/ws/signaling/**")).permitAll()
                 .requestMatchers(new AntPathRequestMatcher("/api/payment/webhook")).permitAll() // Stripe Webhook
-                .requestMatchers(new AntPathRequestMatcher("/api/payment/checkout")).permitAll() // Stripe Checkout Session creation
                 .anyRequest().authenticated()
+            )
+            .exceptionHandling(exceptions -> exceptions
+                .authenticationEntryPoint((request, response, exception) -> {
+                    response.setStatus(HttpStatus.UNAUTHORIZED.value());
+                    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                    objectMapper.writeValue(response.getOutputStream(), GlobalExceptionHandler.body(
+                            HttpStatus.UNAUTHORIZED,
+                            "Authentication is required or the token is invalid",
+                            request.getRequestURI()));
+                })
+                .accessDeniedHandler((request, response, exception) -> {
+                    response.setStatus(HttpStatus.FORBIDDEN.value());
+                    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                    objectMapper.writeValue(response.getOutputStream(), GlobalExceptionHandler.body(
+                            HttpStatus.FORBIDDEN,
+                            "You do not have permission to access this resource",
+                            request.getRequestURI()));
+                })
             );
 
         http.authenticationProvider(authenticationProvider());

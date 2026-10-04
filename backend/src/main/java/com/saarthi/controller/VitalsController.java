@@ -1,5 +1,6 @@
 package com.saarthi.controller;
 
+import com.saarthi.dto.VitalsLogResponse;
 import com.saarthi.model.User;
 import com.saarthi.model.VitalsLog;
 import com.saarthi.repository.UserRepository;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 @RestController
 @RequestMapping("/api/vitals")
@@ -25,7 +27,8 @@ public class VitalsController {
 
     private User getAuthenticatedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username).orElseThrow(() -> new RuntimeException("User not found"));
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new NoSuchElementException("Authenticated user was not found"));
     }
 
     @PostMapping("/log")
@@ -50,7 +53,10 @@ public class VitalsController {
     @GetMapping("/history")
     public ResponseEntity<?> getVitalsHistory() {
         User user = getAuthenticatedUser();
-        List<VitalsLog> logs = vitalsRepository.findByUserOrderByRecordedAtAsc(user);
+        List<VitalsLogResponse> logs = vitalsRepository.findByUserOrderByRecordedAtAsc(user)
+                .stream()
+                .map(VitalsLogResponse::from)
+                .toList();
         return ResponseEntity.ok(logs);
     }
 }

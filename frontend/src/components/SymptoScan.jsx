@@ -63,52 +63,36 @@ function SymptoScan({ onTabChange }) {
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error("API scan failed");
+      if (!response.ok) throw new Error(data.message || "Symptom guidance is unavailable");
+      if (!data || !data.source || !data.predicted_condition) {
+        throw new Error("The server returned an unexpected symptom-guidance response");
+      }
+      setScanModeInfo(data.source === 'FALLBACK'
+        ? 'Gemini is unavailable. Showing general fallback guidance, not an AI assessment.'
+        : 'Live Gemini-generated educational guidance.');
       setResult(data);
     } catch (err) {
       console.error(err);
-      setScanModeInfo("Running local clinical rules analyzer.");
-      const fallbackResult = runLocalFallback(selectedSymptoms);
-      setResult(fallbackResult);
+      setScanModeInfo("The backend could not be reached. Showing generic local safety guidance.");
+      setResult(createLocalSafetyFallback());
     } finally {
       setLoading(false);
     }
   };
 
-  const runLocalFallback = (symptoms) => {
-    const conditionSymptoms = {
-      "PCOD/PCOS": ["irregular periods", "acne", "weight gain", "hair thinning"],
-      "Endometriosis": ["pelvic pain", "cramps", "fatigue"],
-      "Fibroids": ["heavy bleeding", "pelvic pain", "frequent urination"],
-      "PMS/PMDD": ["mood swings", "bloating", "fatigue"],
-      "Menopause": ["hot flashes", "night sweats"]
-    };
-
-    let bestMatch = "Condition not confidently detected";
-    let maxMatches = 0;
-
-    for (const [cond, symList] of Object.entries(conditionSymptoms)) {
-      let count = 0;
-      symptoms.forEach(s => {
-        if (symList.includes(s)) count++;
-      });
-      if (count > maxMatches) {
-        maxMatches = count;
-        bestMatch = cond;
-      }
-    }
-
-    const confidence = maxMatches > 0 ? (maxMatches / 4) : 0.0;
+  const createLocalSafetyFallback = () => {
     return {
-      predicted_condition: bestMatch,
-      confidence: confidence,
-      urgency: confidence > 0.6 ? "Medium" : "Low",
-      recommended_specialist: "Gynecologist",
+      predicted_condition: "No AI assessment available",
+      confidence: 0,
+      urgency: "Unknown",
+      recommended_specialist: "Qualified healthcare professional",
       doctor_questions: [
-        "Are there specific clinical tests you recommend for these symptoms?",
-        "Should I track these symptoms over a specific number of cycles?"
+        "Which symptoms should I monitor or record?",
+        "When should I seek an in-person medical evaluation?"
       ],
-      home_care: "Ensure proper hydration, follow a balanced diet, and rest."
+      home_care: "Track your symptoms and seek professional care if they persist or worsen. Seek urgent medical help for severe pain, very heavy bleeding, fainting, chest pain, or difficulty breathing.",
+      source: "LOCAL_FALLBACK",
+      disclaimer: "Educational guidance only; this is not a diagnosis or a substitute for professional medical care."
     };
   };
 
@@ -136,11 +120,11 @@ function SymptoScan({ onTabChange }) {
       {/* Header Banner */}
       <div className="bg-white border border-[#ECE8F5] rounded-[20px] p-6 md:p-8 space-y-2 shadow-xs">
         <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-[#6D5BD0] bg-[#B6A8F8]/15 px-3 py-1 rounded-full border border-[#B6A8F8]/30">
-          🤖 AI Clinical Symptom Guidance
+          🤖 Educational Symptom Guidance
         </span>
         <h2 className="font-outfit text-2xl sm:text-3xl font-black text-[#2D2A4A]">SymptoScan AI Check</h2>
         <p className="text-xs sm:text-sm text-[#5F6473] leading-relaxed">
-          Select symptoms to evaluate common women's health conditions like PCOS, Fibroids, or Menstrual disruptions.
+          Select symptoms to receive general guidance about possible patterns and questions to discuss with a healthcare professional.
         </p>
       </div>
 
@@ -190,7 +174,7 @@ function SymptoScan({ onTabChange }) {
           <div className="bg-white rounded-2xl border border-warm-200 p-7 shadow-sm space-y-6">
             <h3 className="font-outfit text-xl font-bold text-warm-800 flex items-center gap-2">
               <Stethoscope className="w-5 h-5 text-brand-600" />
-              <span>Diagnostic Report</span>
+              <span>Symptom Guidance</span>
             </h3>
 
             {loading ? (
@@ -198,7 +182,7 @@ function SymptoScan({ onTabChange }) {
                 <div className="w-10 h-10 border-4 border-teal-800 border-t-transparent rounded-full animate-spin mx-auto"></div>
                 <div className="space-y-1">
                   <h4 className="font-extrabold text-sm text-teal-950">Analyzing Symptoms</h4>
-                  <p className="text-xs text-teal-650 font-semibold">Generating clinical guidance via Gemini AI...</p>
+                  <p className="text-xs text-teal-650 font-semibold">Generating educational guidance via Gemini AI...</p>
                 </div>
               </div>
             ) : result ? (
@@ -215,14 +199,15 @@ function SymptoScan({ onTabChange }) {
                     <div>
                       <span className="text-xs font-bold text-warm-500 uppercase tracking-wider flex items-center gap-1">
                         <Radar className="w-3.5 h-3.5 text-blue-500" />
-                        <span>Predicted Condition</span>
+                        <span>Possible Pattern — Not a Diagnosis</span>
                       </span>
                       <h4 className="text-lg font-black text-warm-900 mt-1">{result.predicted_condition}</h4>
                     </div>
                     <span className={`px-2.5 py-1 rounded-full font-black uppercase text-[10px] ${
                       result.urgency === 'High' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
                       result.urgency === 'Medium' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
-                      'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      result.urgency === 'Low' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                      'bg-gray-100 text-gray-700 border border-gray-200'
                     }`}>
                       {result.urgency || 'Low'} Urgency
                     </span>
@@ -235,8 +220,10 @@ function SymptoScan({ onTabChange }) {
                       <span className="text-warm-900 font-extrabold text-sm">{result.recommended_specialist || 'Gynecologist'}</span>
                     </div>
                     <div>
-                      <span className="font-bold text-warm-500 block text-xs uppercase">Confidence Match:</span>
-                      <span className="text-warm-900 font-extrabold text-sm">{(result.confidence * 100).toFixed(0)}%</span>
+                      <span className="font-bold text-warm-500 block text-xs uppercase">Response Source:</span>
+                      <span className="text-warm-900 font-extrabold text-sm">
+                        {result.source === 'GEMINI' ? 'Gemini AI' : 'General fallback'}
+                      </span>
                     </div>
                   </div>
 
@@ -263,7 +250,7 @@ function SymptoScan({ onTabChange }) {
                 <div className="flex gap-2.5 p-4 bg-yellow-50 text-yellow-900 rounded-xl border border-yellow-250 text-xs leading-relaxed">
                   <AlertTriangle className="w-4.5 h-4.5 shrink-0 text-yellow-600 mt-0.5" />
                   <p>
-                    <strong>Medical Disclaimer:</strong> SymptoScan provides general insights based on AI matches. It is NOT a substitute for professional clinical advice.
+                    <strong>Medical Disclaimer:</strong> {result.disclaimer || 'This is general educational guidance, not a diagnosis or a substitute for professional medical care.'}
                   </p>
                 </div>
 
@@ -293,7 +280,7 @@ function SymptoScan({ onTabChange }) {
               <div className="text-center py-12 text-warm-450 space-y-3">
                 <HeartPulse className="w-14 h-14 text-warm-350 mx-auto animate-pulse" />
                 <p className="text-sm leading-relaxed max-w-[220px] mx-auto">
-                  Select your symptoms on the left and submit to scan for conditions.
+                  Select your symptoms on the left to receive educational guidance.
                 </p>
               </div>
             )}

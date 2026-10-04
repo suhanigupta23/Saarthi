@@ -1,98 +1,116 @@
 package com.saarthi.service;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.saarthi.dto.SymptomAnalysisResponse;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import org.springframework.stereotype.Service;
+
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 
 @Service
 public class GeminiService {
 
-    @Value("${GEMINI_API_KEY:}")
-    private String apiKey;
+    public static final String CIRCUIT_BREAKER_NAME = "geminiCircuit";
+    private static final String DISCLAIMER =
+            "Educational guidance only; this is not a diagnosis or a substitute for professional medical care.";
+    private static final Set<String> ALLOWED_URGENCY = Set.of("Low", "Medium", "High");
 
-    // Use RestTemplate which is fully supported in Spring Boot 3.1.x
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final GeminiClient geminiClient;
+    private final ObjectMapper objectMapper;
 
-    @SuppressWarnings("unchecked")
-    @CircuitBreaker(name = "geminiCircuit", fallbackMethod = "fallbackSymptomAnalysis")
-    public String analyzeSymptoms(List<String> symptoms) {
-        String prompt = "You are a professional medical AI for women's health. " +
-                        "Analyze these symptoms: " + String.join(", ", symptoms) + ". " +
-                        "What could be the cause? " +
-                        "Return your response ONLY as a JSON object with these exact keys: " +
-                        "'predicted_condition' (String), " +
-                        "'confidence' (Double between 0.0 and 1.0), " +
-                        "'urgency' (String: Low, Medium, or High), " +
-                        "'recommended_specialist' (String), " +
-                        "'doctor_questions' (List of Strings, max 3 items), " +
-                        "'home_care' (String). " +
-                        "Do not include markdown tags (like ```json), backticks, or any other explanations. Just return raw JSON.";
-
-        // Free tier endpoint for Google AI Studio Gemini 3.5 Flash
-        String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=" + apiKey;
-
-        // Construct standard Gemini JSON payload structure
-        Map<String, Object> requestBody = Map.of(
-            "contents", List.of(
-                Map.of("parts", List.of(
-                    Map.of("text", prompt)
-                ))
-            )
-        );
-
-        // Set headers
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-
-        // Wrap payload in HttpEntity
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
-
-        try {
-            ResponseEntity<Map> responseEntity = restTemplate.postForEntity(url, entity, Map.class);
-            Map<String, Object> response = responseEntity.getBody();
-
-            if (response == null) {
-                throw new RuntimeException("Empty response body from Gemini API");
-            }
-
-            // Traverse the Gemini response payload structure:
-            // response -> candidates[0] -> content -> parts[0] -> text
-            List<Map<String, Object>> candidates = (List<Map<String, Object>>) response.get("candidates");
-            Map<String, Object> content = (Map<String, Object>) candidates.get(0).get("content");
-            List<Map<String, Object>> parts = (List<Map<String, Object>>) content.get("parts");
-            String rawJsonResult = (String) parts.get(0).get("text");
-            rawJsonResult = rawJsonResult.trim();
-            
-            // Clean up any markdown code block formatting returned by Gemini
-            if (rawJsonResult.startsWith("```")) {
-                if (rawJsonResult.startsWith("```json")) {
-                    rawJsonResult = rawJsonResult.substring(7);
-                } else {
-                    rawJsonResult = rawJsonResult.substring(3);
-                }
-                if (rawJsonResult.endsWith("```")) {
-                    rawJsonResult = rawJsonResult.substring(0, rawJsonResult.length() - 3);
-                }
-                rawJsonResult = rawJsonResult.trim();
-            }
-
-            return rawJsonResult;
-        } catch (Exception e) {
-            System.err.println(">>> GeminiService Exception occurred: " + e.getMessage());
-            e.printStackTrace();
-            throw new RuntimeException("Gemini API Error", e);
-        }
+    public GeminiService(GeminiClient geminiClient, ObjectMapper objectMapper) {
+        this.geminiClient = geminiClient;
+        this.objectMapper = objectMapper;
     }
 
-    public String fallbackSymptomAnalysis(List<String> symptoms, Throwable t) {
-        System.err.println("Circuit Breaker Active - Fallback triggered due to: " + t.getMessage());
-        return "{\"predicted_condition\": \"AI Connection Issue (Resilience4j Fallback active)\", \"confidence\": 0.0, \"urgency\": \"Low\", \"recommended_specialist\": \"General Practitioner\", \"doctor_questions\": [\"Is there a standard clinical test for my symptoms?\"], \"home_care\": \"Stay hydrated, monitor symptom progression, and seek virtual consult if discomfort persists.\"}";
+    @CircuitBreaker(name = CIRCUIT_BREAKER_NAME, fallbackMethod = "fallbackSymptomAnalysis")
+    public SymptomAnalysisResponse analyzeSymptoms(List<String> symptoms) {
+        String rawJson = geminiClient.generateContent(buildPrompt(symptoms));
+        GeminiPayload payload = parseAndValidate(stripCodeFence(rawJson));
+        return new SymptomAnalysisResponse(
+                payload.predictedCondition(),
+                payload.confidence(),
+                payload.urgency(),
+                payload.recommendedSpecialist(),
+                List.copyOf(payload.doctorQuestions()),
+                payload.homeCare(),
+                SymptomAnalysisResponse.Source.GEMINI,
+                DISCLAIMER
+        );
+    }
+
+    public SymptomAnalysisResponse fallbackSymptomAnalysis(List<String> symptoms, Throwable failure) {
+        return new SymptomAnalysisResponse(
+                "AI assessment unavailable",
+                0.0,
+                "Unknown",
+                "Qualified healthcare professional",
+                List.of(
+                        "Which symptoms should I monitor or record?",
+                        "When should I seek an in-person medical evaluation?"
+                ),
+                "Track when symptoms occur and whether they are worsening. Seek professional care for persistent or concerning symptoms. For severe pain, very heavy bleeding, fainting, chest pain, or difficulty breathing, seek urgent medical help.",
+                SymptomAnalysisResponse.Source.FALLBACK,
+                DISCLAIMER
+        );
+    }
+
+    private String buildPrompt(List<String> symptoms) {
+        return "Provide general educational women's-health guidance for these reported symptoms: "
+                + String.join(", ", symptoms) + ". Do not present the result as a diagnosis or medically validated conclusion. "
+                + "Return only one JSON object with these exact keys: "
+                + "'predicted_condition' (a cautious possible pattern, String), "
+                + "'confidence' (Double from 0.0 to 1.0), "
+                + "'urgency' (Low, Medium, or High), "
+                + "'recommended_specialist' (String), "
+                + "'doctor_questions' (List of at most 3 Strings), "
+                + "'home_care' (conservative general guidance, String). "
+                + "Do not include markdown fences or extra text.";
+    }
+
+    private GeminiPayload parseAndValidate(String json) {
+        final GeminiPayload payload;
+        try {
+            payload = objectMapper.readValue(json, GeminiPayload.class);
+        } catch (JsonProcessingException exception) {
+            throw new InvalidGeminiResponseException("Gemini returned malformed guidance", exception);
+        }
+
+        if (payload.predictedCondition() == null || payload.predictedCondition().isBlank()
+                || payload.confidence() == null || payload.confidence() < 0 || payload.confidence() > 1
+                || !ALLOWED_URGENCY.contains(payload.urgency())
+                || payload.recommendedSpecialist() == null || payload.recommendedSpecialist().isBlank()
+                || payload.doctorQuestions() == null || payload.doctorQuestions().size() > 3
+                || payload.homeCare() == null || payload.homeCare().isBlank()) {
+            throw new InvalidGeminiResponseException("Gemini guidance did not match the expected schema", null);
+        }
+        return payload;
+    }
+
+    private String stripCodeFence(String value) {
+        String cleaned = value == null ? "" : value.trim();
+        if (cleaned.startsWith("```json")) cleaned = cleaned.substring(7);
+        else if (cleaned.startsWith("```")) cleaned = cleaned.substring(3);
+        if (cleaned.endsWith("```")) cleaned = cleaned.substring(0, cleaned.length() - 3);
+        return cleaned.trim();
+    }
+
+    private record GeminiPayload(
+            @JsonProperty("predicted_condition") String predictedCondition,
+            Double confidence,
+            String urgency,
+            @JsonProperty("recommended_specialist") String recommendedSpecialist,
+            @JsonProperty("doctor_questions") List<String> doctorQuestions,
+            @JsonProperty("home_care") String homeCare
+    ) {
+    }
+
+    public static class InvalidGeminiResponseException extends RuntimeException {
+        public InvalidGeminiResponseException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 }

@@ -1,5 +1,6 @@
 package com.saarthi.controller;
 
+import com.saarthi.dto.CycleLogResponse;
 import com.saarthi.model.CycleLog;
 import com.saarthi.model.User;
 import com.saarthi.repository.CycleLogRepository;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 @RestController
 @RequestMapping("/api/cycle")
@@ -25,7 +27,8 @@ public class CycleController {
 
     private User getAuthenticatedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username).orElseThrow(() -> new RuntimeException("User not found"));
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new NoSuchElementException("Authenticated user was not found"));
     }
 
     @PostMapping("/log")
@@ -45,7 +48,10 @@ public class CycleController {
     @GetMapping("/logs")
     public ResponseEntity<?> getCycleLogs() {
         User user = getAuthenticatedUser();
-        List<CycleLog> logs = cycleLogRepository.findByUserOrderByStartDateDesc(user);
+        List<CycleLogResponse> logs = cycleLogRepository.findByUserOrderByStartDateDesc(user)
+                .stream()
+                .map(CycleLogResponse::from)
+                .toList();
         return ResponseEntity.ok(logs);
     }
 }

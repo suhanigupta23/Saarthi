@@ -1,12 +1,16 @@
 package com.saarthi.controller;
 
+import com.saarthi.dto.UserProfileResponse;
+import com.saarthi.exception.InvalidApiRequestException;
 import com.saarthi.model.User;
 import com.saarthi.repository.UserRepository;
 import com.saarthi.security.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -14,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -40,8 +45,12 @@ public class AuthController {
         String password = request.get("password");
         String name = request.get("name");
 
+        if (isBlank(username) || isBlank(password) || isBlank(name)) {
+            throw new InvalidApiRequestException("Username, password, and name are required");
+        }
+
         if (userRepository.findByUsername(username).isPresent()) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Username is already taken!"));
+            throw new InvalidApiRequestException("Username is already taken!");
         }
 
         User user = new User(username, passwordEncoder.encode(password), name);
@@ -58,12 +67,17 @@ public class AuthController {
         String username = request.get("username");
         String password = request.get("password");
 
+        if (isBlank(username) || isBlank(password)) {
+            throw new InvalidApiRequestException("Username and password are required");
+        }
+
         authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(username, password));
 
         final UserDetails userDetails = userDetailsService.loadUserByUsername(username);
         final String jwt = jwtUtil.generateToken(userDetails);
 
-        User user = userRepository.findByUsername(username).orElseThrow();
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new NoSuchElementException("User was not found"));
 
         Map<String, Object> response = new HashMap<>();
         response.put("token", jwt);
@@ -77,15 +91,17 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<?> getCurrentUser(@RequestHeader("Authorization") String token) {
-        if (token != null && token.startsWith("Bearer ")) {
-            String jwt = token.substring(7);
-            String username = jwtUtil.extractUsername(jwt);
-            User user = userRepository.findByUsername(username).orElse(null);
-            if (user != null) {
-                return ResponseEntity.ok(user);
-            }
+    public ResponseEntity<UserProfileResponse> getCurrentUser(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()
+                || "anonymousUser".equals(authentication.getPrincipal())) {
+            throw new InsufficientAuthenticationException("Authentication is required");
         }
-        return ResponseEntity.status(401).body(Map.of("message", "Unauthorized"));
+        User user = userRepository.findByUsername(authentication.getName())
+                .orElseThrow(() -> new NoSuchElementException("Authenticated user was not found"));
+        return ResponseEntity.ok(UserProfileResponse.from(user));
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

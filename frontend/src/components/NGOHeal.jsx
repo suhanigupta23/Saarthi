@@ -137,11 +137,11 @@ function NGOHeal({ isLoggedIn, onRequireAuth }) {
       <div className="bg-white border border-[#ECE8F5] rounded-[20px] p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xs">
         <div className="space-y-2 max-w-xl">
           <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-[#3B826E] bg-[#A9D8C8]/20 px-3 py-1 rounded-full border border-[#A9D8C8]/30">
-            🤝 Verified Partner NGO & Shelter Network
+            🤝 Static Demo Support Directory
           </span>
           <h2 className="font-outfit text-2xl sm:text-3xl font-black text-[#2D2A4A]">NGOHeal Support Network</h2>
           <p className="text-xs sm:text-sm text-[#5F6473] leading-relaxed">
-            Connect with verified non-governmental healthcare clinics, shelters, and crisis response groups across India.
+            Explore example support-directory records. Saarthi does not verify, onboard, or contact these organizations.
           </p>
         </div>
         <img 
@@ -198,10 +198,10 @@ function NGOHeal({ isLoggedIn, onRequireAuth }) {
           <div className="p-3 bg-[#F5F3FA] border border-[#ECE8F5] rounded-xl text-[11px] text-[#2D2A4A] space-y-1">
             <div className="flex items-center gap-1.5 font-bold">
               <ShieldCheck className="w-3.5 h-3.5 text-[#3B826E]" />
-              <span>Verified NGO Network</span>
+              <span>Verification required</span>
             </div>
             <p className="text-[#5F6473] text-[10px] leading-relaxed">
-              All listed NGOs are 12A/80G certified healthcare organizations working directly with district hospitals.
+              This prototype does not validate certification, availability, or partnerships. Confirm details through official sources.
             </p>
           </div>
         </div>
@@ -209,7 +209,7 @@ function NGOHeal({ isLoggedIn, onRequireAuth }) {
         {/* NGO Cards List */}
         <div className="lg:col-span-2 space-y-4">
           <h3 className="font-outfit text-sm font-extrabold text-[#2D2A4A]">
-            Verified Partner Organizations ({filtered.length})
+            Demo Directory Records ({filtered.length})
           </h3>
 
           <div className="space-y-4">

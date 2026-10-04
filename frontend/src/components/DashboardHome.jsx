@@ -5,6 +5,7 @@ import {
   Building2, MessageCircle, Shield, Sparkles 
 } from 'lucide-react';
 import HelpPopup from './HelpPopup.jsx';
+import { API_BASE } from '../App.jsx';
 
 const DashboardHome = ({ user, onTabChange }) => {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -15,7 +16,7 @@ const DashboardHome = ({ user, onTabChange }) => {
   const [activityMap, setActivityMap] = useState({
     cycle: "Logged 2h ago",
     symptom: "Checked today",
-    gynconnect: "1 slot booked",
+    gynconnect: "Loading appointments",
     vault: "2 documents secured",
     vax: "1 vaccine completed",
     yojana: "Active scheme search",
@@ -43,16 +44,11 @@ const DashboardHome = ({ user, onTabChange }) => {
       setDaysUntilNext(28 - day);
     }
 
-    const apptsSaved = localStorage.getItem('saarthi_appointments');
     const vaxSaved = localStorage.getItem('saarthi_completed_vaccines');
     const ngoSaved = localStorage.getItem('saarthi_ngo_inquiries');
 
     setActivityMap(prev => {
       const updated = { ...prev };
-      if (apptsSaved) {
-        const parsed = JSON.parse(apptsSaved);
-        if (parsed.length > 0) updated.gynconnect = `${parsed.length} slot(s) booked`;
-      }
       if (vaxSaved) {
         const parsed = JSON.parse(vaxSaved);
         const done = parsed.filter(v => v.status === 'completed').length;
@@ -64,6 +60,23 @@ const DashboardHome = ({ user, onTabChange }) => {
       }
       return updated;
     });
+
+    const fetchAppointmentCount = async () => {
+      const token = localStorage.getItem('saarthi_token');
+      if (!token) return;
+      try {
+        const response = await fetch(`${API_BASE}/appointments/my`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const appointments = await response.json();
+        const count = Array.isArray(appointments) ? appointments.length : 0;
+        setActivityMap(prev => ({ ...prev, gynconnect: `${count} appointment(s)` }));
+      } catch {
+        setActivityMap(prev => ({ ...prev, gynconnect: 'Appointments unavailable' }));
+      }
+    };
+    fetchAppointmentCount();
   }, []);
 
   const personalizedFeatures = [
@@ -95,7 +108,7 @@ const DashboardHome = ({ user, onTabChange }) => {
       id: "gynconnect",
       icon: Heart,
       title: "GynConnect Consult",
-      description: "Book direct video calls or text chats with verified health doctors.",
+      description: "Try OSM discovery, appointment booking, and a WebRTC consultation demo.",
       progress: 80,
       lastUsed: activityMap.gynconnect,
       bgClass: "bg-white border-[#ECE8F5]",
@@ -107,7 +120,7 @@ const DashboardHome = ({ user, onTabChange }) => {
       id: "vault",
       icon: Database,
       title: "MediVault Records",
-      description: "Store your prescriptions and medical files safely in one place.",
+      description: "Organize browser-local record metadata in this portfolio prototype.",
       progress: 90,
       lastUsed: activityMap.vault,
       bgClass: "bg-white border-[#ECE8F5]",
@@ -201,14 +214,14 @@ const DashboardHome = ({ user, onTabChange }) => {
     },
     {
       title: "Health Scan History",
-      value: "85/100",
-      trend: "Excellent vitals match",
+      value: "Demo",
+      trend: "No clinical score calculated",
       positive: true
     },
     {
       title: "Account Status",
-      value: "Verified",
-      trend: "Saarthi Partner User",
+      value: "Signed in",
+      trend: "JWT-authenticated account",
       positive: true
     }
   ];
@@ -318,7 +331,7 @@ const DashboardHome = ({ user, onTabChange }) => {
                   <h3 className="font-bold text-sm text-[#2D2A4A]">Need Urgent Assistance?</h3>
                 </div>
                 <p className="text-xs text-[#5F6473] mb-3 leading-relaxed">
-                  Stuck with cycle logging or doctor appointments? Reach our support team 24/7.
+                  Explore the demo help interface for cycle logging and appointment guidance. It is not a clinical support service.
                 </p>
                 <button 
                   onClick={() => setIsHelpOpen(true)}

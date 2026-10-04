@@ -87,37 +87,88 @@ function App() {
 
   // Check login on load & handle payment notices (e.g. ?payment=cancel)
   useEffect(() => {
-    if (window.location.search.includes('payment=cancel')) {
-      setPaymentNotice('Stripe checkout was cancelled. No payment was deducted from your account.');
+    const params = new URLSearchParams(window.location.search);
+    const paymentResult = params.get('payment');
+    const appointmentRef = params.get('appointmentRef');
+    const token = localStorage.getItem('saarthi_token');
+    const savedUser = localStorage.getItem('saarthi_user');
+    let verificationTimer;
+    let cancelled = false;
+
+    if (paymentResult === 'cancel') {
+      setPaymentNotice('Stripe checkout was cancelled. The appointment remains pending payment.');
       setActiveTab('gynconnect');
       setTimeout(() => setPaymentNotice(''), 6000);
       window.history.replaceState({}, document.title, window.location.pathname);
-    } else if (window.location.search.includes('payment=success')) {
-      setPaymentNotice('✓ Payment Confirmed! Your doctor consultation is scheduled.');
+    } else if (paymentResult === 'success') {
+      setPaymentNotice('Payment submitted. Verifying the canonical appointment status...');
       setActiveTab('gynconnect');
-      setTimeout(() => setPaymentNotice(''), 6000);
       window.history.replaceState({}, document.title, window.location.pathname);
+
+      const verifyAppointment = async (attempt = 0) => {
+        if (!token || !appointmentRef) {
+          setPaymentNotice('Payment was submitted, but appointment status could not be checked. Please sign in and open your profile.');
+          return;
+        }
+        try {
+          const response = await fetch(`${API_BASE}/appointments/my`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const appointments = await response.json();
+          const appointment = Array.isArray(appointments)
+            ? appointments.find(item => item.appointmentRef === appointmentRef)
+            : null;
+          if (appointment?.status === 'CONFIRMED') {
+            setPaymentNotice(`Payment verified by Stripe. Appointment ${appointmentRef} is confirmed.`);
+            return;
+          }
+          if (attempt < 5) {
+            verificationTimer = window.setTimeout(() => verifyAppointment(attempt + 1), 1500);
+          } else {
+            setPaymentNotice(`Appointment ${appointmentRef} is still pending payment verification. Check your profile again shortly.`);
+          }
+        } catch {
+          setPaymentNotice('Payment was submitted, but verification status is temporarily unavailable. Check your profile again shortly.');
+        }
+      };
+      verifyAppointment();
     } else if (window.location.search) {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
-    const token = localStorage.getItem('saarthi_token');
-    const savedUser = localStorage.getItem('saarthi_user');
-    if (token && savedUser) {
-      setIsLoggedIn(true);
-      setUser(JSON.parse(savedUser));
-    } else {
-      // Default demo mock user for testing if no user is saved
-      const mockUser = {
-        name: 'Ananya Sharma',
-        username: 'ananya_sharma',
-        email: 'ananya.sharma@example.com',
-        location: 'Bhopal, MP',
-        age: 26,
-        joined: 'January 2026'
-      };
-      setUser(mockUser);
-    }
+    const restoreAuthenticatedSession = async () => {
+      if (!token || !savedUser) {
+        setUser(null);
+        setIsLoggedIn(false);
+        return;
+      }
+      try {
+        const response = await fetch(`${API_BASE}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!response.ok) throw new Error('Stored session is invalid');
+        const profile = await response.json();
+        if (cancelled) return;
+        localStorage.setItem('saarthi_user', JSON.stringify(profile));
+        setUser(profile);
+        setIsLoggedIn(true);
+      } catch {
+        localStorage.removeItem('saarthi_token');
+        localStorage.removeItem('saarthi_user');
+        localStorage.removeItem('saarthi_appointments');
+        if (!cancelled) {
+          setUser(null);
+          setIsLoggedIn(false);
+        }
+      }
+    };
+    restoreAuthenticatedSession();
+
+    return () => {
+      cancelled = true;
+      if (verificationTimer) window.clearTimeout(verificationTimer);
+    };
   }, []);
 
   // Smooth scroll to top on all tab transitions immediately
@@ -148,6 +199,7 @@ function App() {
   const handleLogout = () => {
     localStorage.removeItem('saarthi_token');
     localStorage.removeItem('saarthi_user');
+    localStorage.removeItem('saarthi_appointments');
     setUser(null);
     setIsLoggedIn(false);
     setActiveTab('home');
@@ -202,13 +254,13 @@ function App() {
       id: 'gynconnect',
       icon: Heart,
       title: "GynConnect",
-      description: "Book direct video calls or text chats with verified women's health doctors in your area."
+      description: "Explore nearby OpenStreetMap healthcare listings and try Saarthi's appointment and WebRTC demo flow."
     },
     {
       id: 'vault',
       icon: Database,
       title: "MediVault",
-      description: "Store your doctor prescriptions and medical files safely in one place so you never lose them."
+      description: "Try a browser-local prototype for organizing medical-record metadata and tracking vitals."
     },
     {
       id: 'yojana',
@@ -226,13 +278,13 @@ function App() {
       id: 'vax',
       icon: Shield,
       title: "VaxAlert",
-      description: "Set up a personal vaccine calendar with automated SMS reminders for you and your daughters."
+      description: "Try a browser-local vaccine calendar and reminder demonstration."
     },
     {
       id: 'chat',
       icon: MessageCircle,
       title: "CareCircle",
-      description: "Talk privately in safe online groups with other women who are going through the same health journeys."
+      description: "Explore a simulated peer-support interface; it is not a live community or clinical service."
     }
   ];
 
@@ -436,7 +488,7 @@ function App() {
               
               <div className="px-4 border-t border-[#ECE8F5] py-3 text-center bg-[#FAF8FC]">
                 <p className="text-[11px] text-[#2D2A4A] font-bold">🌿 Saarthi Women's Health</p>
-                <p className="text-[9px] text-[#8A8FA3] font-medium">Encrypted • P2P Secured</p>
+                <p className="text-[9px] text-[#8A8FA3] font-medium">Student portfolio demonstration</p>
               </div>
             </aside>
           </>
@@ -458,16 +510,16 @@ function App() {
                       Guiding women through every stage of their health journey
                     </h2>
                     <p className="text-sm text-teal-900 leading-relaxed font-semibold">
-                      Saarthi was created to be a secure digital health companion for women. We believe healthcare software should be friendly, clear, and easy to understand.
+                      Saarthi was created as a student full-stack health-technology demonstration. We believe healthcare software should be friendly, clear, and easy to understand.
                     </p>
                     <p className="text-sm text-teal-900/80 leading-relaxed">
-                      Our system focuses heavily on privacy and safety. All your symptoms and logs are kept securely in your local browser storage. We translate complex clinical insights into simple summaries so you can prepare for your gynecologist appointments confidently.
+                      Some prototype modules keep data in browser localStorage, while appointments, cycle logs, and vitals use authenticated backend persistence. Browser-local storage is convenient for a demo but is not an encrypted medical-record system.
                     </p>
                     
                     <div className="space-y-3 pt-2 font-bold text-teal-950 text-xs sm:text-sm">
                       <div className="flex items-center gap-2.5">
                         <CheckCircle className="w-4.5 h-4.5 text-teal-700" />
-                        <span>100% Privacy Focused — Your data stays on your device</span>
+                        <span>Explicit boundaries — browser-local and backend-persisted data are identified</span>
                       </div>
                       <div className="flex items-center gap-2.5">
                         <CheckCircle className="w-4.5 h-4.5 text-teal-700" />
@@ -475,7 +527,7 @@ function App() {
                       </div>
                       <div className="flex items-center gap-2.5">
                         <CheckCircle className="w-4.5 h-4.5 text-teal-700" />
-                        <span>Direct Medical Access — Book video calls with certified experts</span>
+                        <span>Demo consultations — OSM listings are not verified Saarthi clinicians</span>
                       </div>
                     </div>
                   </div>
@@ -494,7 +546,7 @@ function App() {
                   <div className="bg-white border border-[#ECE8F5] p-6 rounded-[18px] space-y-2 text-left shadow-xs">
                     <h4 className="font-bold text-[#2D2A4A] text-sm">👩‍⚕️ Clinical Partnership</h4>
                     <p className="text-xs text-[#5F6473] leading-relaxed">
-                      We connect users directly to active, certified gynecologists. All insights prepare patients with meaningful questions to ask during live consults.
+                      GynConnect demonstrates GPS provider discovery, appointment/payment lifecycle code, and WebRTC signaling. It does not onboard or verify real clinicians.
                     </p>
                   </div>
                   <div className="bg-white border border-[#ECE8F5] p-6 rounded-[18px] space-y-2 text-left shadow-xs">
@@ -514,8 +566,8 @@ function App() {
                 {/* Testimonial reviews moved here */}
                 <div className="space-y-6 pt-6">
                   <div className="text-center space-y-1">
-                    <h3 className="text-xl font-black text-[#2D2A4A] font-outfit">Patient Success Stories</h3>
-                    <p className="text-xs text-[#5F6473]">Real reviews from women using Saarthi to navigate their health journeys.</p>
+                    <h3 className="text-xl font-black text-[#2D2A4A] font-outfit">Illustrative Demo Scenarios</h3>
+                    <p className="text-xs text-[#5F6473]">Fictional examples used to demonstrate the interface; these are not real patient reviews.</p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -560,22 +612,22 @@ function App() {
                       We Care For You
                     </div>
                     <h2 className="text-2xl md:text-3xl font-black text-teal-955 leading-tight font-outfit">
-                      Available 24/7 for your health questions
+                      Demo support interface
                     </h2>
                     <p className="text-sm text-teal-900 leading-relaxed font-semibold">
-                      Need help tracking your cycle, updating your medical records locker, or finding a local doctor? Our dedicated support team and automated wellness guides are here to assist you at any time.
+                      This portfolio screen demonstrates how product support could be presented. Saarthi does not operate a clinical support team or emergency service.
                     </p>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="p-4 bg-white border border-teal-100/60 rounded-xl space-y-1">
                         <span className="text-teal-650 text-[10px] uppercase font-bold tracking-wider block">Toll-Free Hotline</span>
-                        <span className="text-sm font-black text-teal-950">1800-SAARTHI</span>
-                        <span className="text-[10px] text-muted-foreground block">Mon-Sat, 9AM to 6PM</span>
+                        <span className="text-sm font-black text-teal-950">Not implemented</span>
+                        <span className="text-[10px] text-muted-foreground block">Use local emergency services for urgent care</span>
                       </div>
                       <div className="p-4 bg-white border border-teal-100/60 rounded-xl space-y-1">
                         <span className="text-teal-650 text-[10px] uppercase font-bold tracking-wider block">Email Help Desk</span>
-                        <span className="text-sm font-black text-teal-955">support@saarthi.health</span>
-                        <span className="text-[10px] text-muted-foreground block">Response under 2 hours</span>
+                        <span className="text-sm font-black text-teal-955">Demo only</span>
+                        <span className="text-[10px] text-muted-foreground block">No monitored help desk is connected</span>
                       </div>
                     </div>
                   </div>
@@ -600,19 +652,19 @@ function App() {
                     {[
                       {
                         q: "How secure is the MediVault Records Locker?",
-                        a: "Saarthi uses sandboxed browser state directories. Your uploaded medical documents, scan reports, and prescription PDFs are stored locally on your device in your browser's encrypted sandbox cache. We do not upload your personal records to external web databases, guaranteeing HIPAA-aligned health confidentiality."
+                        a: "MediVault is a browser-local portfolio prototype. The repository does not implement application-level file encryption, cloud backup, HIPAA certification, or a production medical-record security model."
                       },
                       {
                         q: "Is the SymptoScan AI diagnosis accurate?",
-                        a: "SymptoScan uses Gemini 1.5 Flash to parse symptoms and suggest general clinical urgency tiers (Low, Medium, High). It is purely educational and does not constitute medical advice. Please book a GynConnect video consult for professional clinical evaluations."
+                        a: "SymptoScan sends selected symptoms to the configured Gemini model and returns educational guidance or an identified fallback. It is not a diagnosis or validated medical advice."
                       },
                       {
                         q: "How does the GPS clinic locator work?",
-                        a: "Saarthi asks for location permissions to detect your city (e.g. Bhopal or Kota) using high-precision reverse-geocoding, automatically matching you with certified specialists and maternal government schemes nearby."
+                        a: "GynConnect sends browser coordinates to the backend, which searches community-maintained OpenStreetMap data through Overpass. Results are nearby listings, not certified or Saarthi-verified specialists."
                       },
                       {
                         q: "How are video calls and consultations secured?",
-                        a: "Video calls use peer-to-peer WebRTC connections. This means your video stream travels directly between your device and the doctor's device, with the Spring Boot server only facilitating the initial handshake (signaling). Your video is never recorded or stored on our servers."
+                        a: "The demo uses WebSocket signaling and WebRTC peer connections. Spring Boot exchanges setup messages rather than media. No recording feature is implemented; real browser-to-browser media still requires deployment testing, and no TURN relay is configured."
                       }
                     ].map((faq, idx) => {
                       const isOpen = activeFaq === idx;
@@ -644,11 +696,11 @@ function App() {
               <div className="max-w-4xl mx-auto p-6 md:p-10 space-y-8 animate-in fade-in duration-300 text-left font-sans">
                 <div className="text-center space-y-2 max-w-xl mx-auto">
                   <span className="inline-block bg-[#B6A8F8]/15 border border-[#B6A8F8]/30 text-[#6D5BD0] rounded-full px-3.5 py-1 text-xs font-bold uppercase tracking-wider">
-                    24/7 Support Desk
+                    Demo Support Screen
                   </span>
                   <h2 className="text-3xl font-black text-[#2D2A4A] font-outfit">How Can We Help You Today?</h2>
                   <p className="text-xs sm:text-sm text-[#5F6473] leading-relaxed">
-                    Have questions about appointment booking, vaccine scheduling, or cycle tracking? Submit an emergency ticket below.
+                    This form demonstrates UI behavior only. It does not transmit a ticket or provide emergency support.
                   </p>
                 </div>
 
@@ -656,17 +708,17 @@ function App() {
                   <div className="bg-white border border-[#ECE8F5] rounded-[18px] p-5 space-y-2 shadow-xs">
                     <Phone className="w-5 h-5 text-[#6D5BD0]" />
                     <h3 className="font-bold text-sm text-[#2D2A4A]">Clinical Hotline</h3>
-                    <p className="text-xs text-[#5F6473]">Toll-free 24/7 helpline: 1800-SAARTHI</p>
+                    <p className="text-xs text-[#5F6473]">Not implemented; contact local emergency services when needed.</p>
                   </div>
                   <div className="bg-white border border-[#ECE8F5] rounded-[18px] p-5 space-y-2 shadow-xs">
                     <Mail className="w-5 h-5 text-[#6D5BD0]" />
                     <h3 className="font-bold text-sm text-[#2D2A4A]">Email Support</h3>
-                    <p className="text-xs text-[#5F6473]">support@saarthi.health</p>
+                    <p className="text-xs text-[#5F6473]">No monitored mailbox is connected.</p>
                   </div>
                   <div className="bg-white border border-[#ECE8F5] rounded-[18px] p-5 space-y-2 shadow-xs">
                     <Clock className="w-5 h-5 text-[#6D5BD0]" />
                     <h3 className="font-bold text-sm text-[#2D2A4A]">Response Time</h3>
-                    <p className="text-xs text-[#5F6473]">Guaranteed reply under 15 minutes</p>
+                    <p className="text-xs text-[#5F6473]">No response-time guarantee; demo form only.</p>
                   </div>
                 </div>
 
@@ -675,8 +727,8 @@ function App() {
                   {supportSubmitted ? (
                     <div className="p-6 bg-[#A9D8C8]/20 border border-[#A9D8C8] text-[#2D2A4A] rounded-xl text-center space-y-2">
                       <CheckCircle className="w-10 h-10 text-[#3B826E] mx-auto" />
-                      <h4 className="font-bold text-sm">Ticket Submitted Successfully!</h4>
-                      <p className="text-xs text-[#5F6473]">Our medical support team will reach you shortly.</p>
+                      <h4 className="font-bold text-sm">Demo Form Completed</h4>
+                      <p className="text-xs text-[#5F6473]">No message was transmitted and no support ticket was created.</p>
                     </div>
                   ) : (
                     <form onSubmit={handleSupportSubmit} className="space-y-4">
@@ -938,7 +990,7 @@ function App() {
                   Empowering women through technology, clinical accessibility, and community support for better wellness outcomes.
                 </p>
                 <div className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#6D5BD0] bg-white border border-[#DDD5F0] px-2.5 py-1 rounded-full shadow-3xs">
-                  <span>🌿 ISO 27001 Certified Platform</span>
+                  <span>🌿 Student portfolio demonstration</span>
                 </div>
               </div>
               
@@ -965,10 +1017,10 @@ function App() {
               <div className="space-y-3">
                 <h4 className="font-outfit font-bold text-sm text-[#2D2A4A]">Contact Info</h4>
                 <ul className="space-y-1.5 text-xs text-[#5F6473] leading-relaxed font-medium">
-                  <li>📞 Toll-free: 1800-SAARTHI (7227844)</li>
-                  <li>✉️ Support: support@saarthi.health</li>
-                  <li>📍 Location: Bangalore, Karnataka, India</li>
-                  <li>🕒 Operational: 24/7 Clinical Hotline</li>
+                  <li>Not a clinical or emergency service</li>
+                  <li>No monitored support channel</li>
+                  <li>External listings are not Saarthi-verified</li>
+                  <li>Portfolio/demo use only</li>
                 </ul>
               </div>
             </div>

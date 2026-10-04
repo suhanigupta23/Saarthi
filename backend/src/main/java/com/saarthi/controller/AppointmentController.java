@@ -1,57 +1,89 @@
 package com.saarthi.controller;
 
-import com.saarthi.model.Appointment;
+import com.saarthi.dto.CreateAppointmentRequest;
+import com.saarthi.dto.AppointmentResponse;
+import com.saarthi.exception.InvalidApiRequestException;
 import com.saarthi.model.User;
 import com.saarthi.repository.AppointmentRepository;
 import com.saarthi.repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.saarthi.service.AppointmentService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
 
-import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.List;
-import java.util.Map;
+import java.util.NoSuchElementException;
 
 @RestController
 @RequestMapping("/api/appointments")
 public class AppointmentController {
 
-    @Autowired
-    private AppointmentRepository appointmentRepository;
+    private final AppointmentRepository appointmentRepository;
+    private final UserRepository userRepository;
+    private final AppointmentService appointmentService;
 
-    @Autowired
-    private UserRepository userRepository;
+    public AppointmentController(
+            AppointmentRepository appointmentRepository,
+            UserRepository userRepository,
+            AppointmentService appointmentService) {
+        this.appointmentRepository = appointmentRepository;
+        this.userRepository = userRepository;
+        this.appointmentService = appointmentService;
+    }
 
     private User getAuthenticatedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username).orElseThrow(() -> new RuntimeException("User not found"));
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new NoSuchElementException("Authenticated user was not found"));
     }
 
     @PostMapping("/book")
-    public ResponseEntity<?> bookAppointment(@RequestBody Map<String, Object> request) {
+    public ResponseEntity<AppointmentResponse> bookAppointment(@Valid @RequestBody CreateAppointmentRequest request) {
         User user = getAuthenticatedUser();
 
-        String ref = (String) request.getOrDefault("appointmentRef", "APT-" + (System.currentTimeMillis() % 10000));
-        String doctorName = (String) request.getOrDefault("doctorName", "Specialist Doctor");
-        String specialty = (String) request.getOrDefault("specialty", "Gynecologist");
-        String clinicName = (String) request.getOrDefault("clinicName", "Saarthi Telehealth Clinic");
-        String date = (String) request.getOrDefault("date", "Today");
-        String timeSlot = (String) request.getOrDefault("timeSlot", "10:00 AM");
-        String mode = (String) request.getOrDefault("mode", "Online Video Call");
-        String status = (String) request.getOrDefault("status", "Booked");
-        Integer fee = request.get("fee") != null ? Integer.parseInt(request.get("fee").toString()) : 400;
+        String validationError = validate(request);
+        if (validationError != null) {
+            throw new InvalidApiRequestException(validationError);
+        }
 
-        Appointment appointment = new Appointment(user, ref, doctorName, specialty, clinicName, date, timeSlot, mode, status, fee, LocalDateTime.now());
-        appointmentRepository.save(appointment);
-
-        return ResponseEntity.ok(Map.of("message", "Appointment saved into DB successfully!", "appointmentId", appointment.getId(), "ref", ref));
+        AppointmentResponse response = appointmentService.book(user, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @GetMapping("/my")
     public ResponseEntity<?> getMyAppointments() {
         User user = getAuthenticatedUser();
-        List<Appointment> list = appointmentRepository.findByUserOrderByCreatedAtDesc(user);
+        List<AppointmentResponse> list = appointmentRepository.findByUserOrderByCreatedAtDesc(user)
+                .stream()
+                .map(AppointmentResponse::from)
+                .toList();
         return ResponseEntity.ok(list);
+    }
+
+    private String validate(CreateAppointmentRequest request) {
+        if (request == null) return "Appointment details are required";
+        if (isBlank(request.providerId())) return "Provider identity is required";
+        if (isBlank(request.doctorName())) return "Provider name is required";
+        if (isBlank(request.specialty())) return "Specialty is required";
+        if (isBlank(request.clinicName())) return "Clinic or provider address is required";
+        if (isBlank(request.date())) return "Appointment date is required";
+        try {
+            LocalDate.parse(request.date());
+        } catch (DateTimeParseException exception) {
+            return "Appointment date must use ISO format YYYY-MM-DD";
+        }
+        if (isBlank(request.timeSlot())) return "Appointment time is required";
+        if (!"Online Video Call".equals(request.mode()) && !"Visit Doctor Nearby".equals(request.mode())) {
+            return "Unsupported consultation mode";
+        }
+        return null;
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

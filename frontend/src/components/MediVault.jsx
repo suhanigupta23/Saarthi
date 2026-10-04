@@ -273,7 +273,7 @@ function MediVault({ isLoggedIn, user, onRequireAuth }) {
       {/* Header */}
       <div>
         <h2 className="font-outfit text-2xl font-black text-teal-950">MediVault Health Locker & Vitals Tracker</h2>
-        <p className="text-xs text-muted-foreground mt-1">Upload encrypted medical files, track blood pressure trends, and review past consultation records.</p>
+        <p className="text-xs text-muted-foreground mt-1">Try browser-local record organization and vitals tracking. Application-level file encryption is not implemented.</p>
       </div>
 
       {/* Interactive Vitals Trend Graphs (Matching User Wireframe) */}
@@ -409,7 +409,7 @@ function MediVault({ isLoggedIn, user, onRequireAuth }) {
             <div className="flex justify-between items-center pb-2 border-b border-[#ECE8F5]">
               <h3 className="font-outfit text-sm font-extrabold text-[#2D2A4A] flex items-center gap-2">
                 <UploadCloud className="w-4.5 h-4.5 text-[#6D5BD0]" />
-                <span>Encrypted Document Locker</span>
+                <span>Browser-Local Document Prototype</span>
               </h3>
 
               <button
@@ -435,14 +435,14 @@ function MediVault({ isLoggedIn, user, onRequireAuth }) {
               <label htmlFor="med-file" className="cursor-pointer space-y-2 block">
                 <UploadCloud className="w-8 h-8 text-[#6D5BD0] mx-auto" />
                 <p className="text-xs font-bold text-[#2D2A4A]">Click to upload medical files & prescriptions</p>
-                <p className="text-[10px] text-[#5F6473]">PDF, PNG, JPG (Client-side encrypted sandbox)</p>
+                <p className="text-[10px] text-[#5F6473]">PDF, PNG, JPG (demo metadata stored in this browser; not encrypted by Saarthi)</p>
               </label>
             </div>
 
             {/* List of files */}
             <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <h4 className="text-[10px] font-bold text-[#8A8FA3] uppercase tracking-wider">My Encrypted Documents ({records.length})</h4>
+                <h4 className="text-[10px] font-bold text-[#8A8FA3] uppercase tracking-wider">My Demo Document Records ({records.length})</h4>
                 {records.length > 0 && (
                   <button
                     onClick={clearAllVaultRecords}

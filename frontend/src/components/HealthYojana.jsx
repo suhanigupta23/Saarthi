@@ -283,7 +283,7 @@ function HealthYojana() {
                 <div className="flex justify-between items-center flex-wrap gap-3 pt-1">
                   <div className="flex items-center gap-1.5 text-xs text-[#3B826E] font-bold">
                     <CheckCircle className="w-3.5 h-3.5 text-[#3B826E]" />
-                    <span>Eligible • Verified via MyScheme API</span>
+                    <span>Reference listing • Verify eligibility on the official portal</span>
                   </div>
 
                   <a 

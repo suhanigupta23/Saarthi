@@ -1,39 +1,72 @@
 import React, { useState, useEffect } from 'react';
 import { User, Calendar, Award, CheckCircle, Database, ShieldCheck, Heart, Trash2, Shield, MessageSquare, PhoneCall } from 'lucide-react';
+import { API_BASE } from '../App.jsx';
+
+const formatAppointment = (appointment) => ({
+  id: appointment.appointmentRef || `APT-${appointment.id}`,
+  appointmentId: appointment.id,
+  appointmentRef: appointment.appointmentRef,
+  doctorName: appointment.doctorName,
+  speciality: appointment.specialty,
+  timing: appointment.timeSlot,
+  fee: appointment.fee,
+  status: appointment.status,
+  date: appointment.date
+});
 
 function UserProfile({ user, onUpdateUser }) {
   const [logs, setLogs] = useState([]);
   const [appointments, setAppointments] = useState([]);
+  const [appointmentsLoading, setAppointmentsLoading] = useState(true);
+  const [appointmentsError, setAppointmentsError] = useState('');
   const [completedVaccines, setCompletedVaccines] = useState([]);
   const [ngoInquiries, setNgoInquiries] = useState([]);
   const [status, setStatus] = useState(user?.pregnancyStatus || 'not_pregnant');
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  // Load logs, appointments, vaccines, and NGO inquiries from localStorage
+  // Appointment history comes from PostgreSQL; other dashboard data remains local.
   useEffect(() => {
     const savedLogs = localStorage.getItem('periodLogs');
     if (savedLogs) {
       setLogs(JSON.parse(savedLogs));
     }
 
-    const savedAppts = localStorage.getItem('saarthi_appointments');
-    if (savedAppts) {
-      setAppointments(JSON.parse(savedAppts));
-    } else {
-      const initialAppts = [
-        {
-          id: 'APT-4829-KOTA',
-          doctorName: 'Dr. Smita Agrawal',
-          speciality: 'Maternity Specialist',
-          timing: '9:30 AM - 2 PM',
-          fee: 500,
-          status: 'Confirmed 🟢',
-          date: new Date().toLocaleDateString()
+    const fetchAppointments = async () => {
+      const token = localStorage.getItem('saarthi_token');
+      if (!token) {
+        setAppointmentsError('Sign in to load appointment history.');
+        setAppointmentsLoading(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/appointments/my`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!response.ok) {
+          let message = '';
+          try {
+            const errorBody = await response.json();
+            message = errorBody.message || '';
+          } catch {
+            // Fall back to a status-based message when the body is not JSON.
+          }
+          throw new Error(message || (response.status === 401 || response.status === 403
+            ? 'Your session is not authorized. Please sign in again.'
+            : `Appointment history could not be loaded (${response.status}).`));
         }
-      ];
-      setAppointments(initialAppts);
-      localStorage.setItem('saarthi_appointments', JSON.stringify(initialAppts));
-    }
+
+        const body = await response.json();
+        const formatted = Array.isArray(body) ? body.map(formatAppointment) : [];
+        setAppointments(formatted);
+        localStorage.setItem('saarthi_appointments', JSON.stringify(formatted));
+      } catch (error) {
+        setAppointmentsError(error.message || 'Appointment history could not be loaded.');
+      } finally {
+        setAppointmentsLoading(false);
+      }
+    };
+    fetchAppointments();
 
     const savedVaccines = localStorage.getItem('saarthi_completed_vaccines');
     if (savedVaccines) {
@@ -63,12 +96,6 @@ function UserProfile({ user, onUpdateUser }) {
     localStorage.setItem('periodLogs', JSON.stringify(updated));
   };
 
-  const clearAppointment = (id) => {
-    const updated = appointments.filter(a => a.id !== id);
-    setAppointments(updated);
-    localStorage.setItem('saarthi_appointments', JSON.stringify(updated));
-  };
-
   return (
     <div className="space-y-8 animate-in fade-in duration-300 text-left">
       
@@ -91,8 +118,8 @@ function UserProfile({ user, onUpdateUser }) {
               <User className="w-9 h-9" />
             </div>
             <div>
-              <h3 className="text-base font-extrabold text-teal-950">{user?.name || 'Ananya Sharma'}</h3>
-              <p className="text-xs font-semibold text-muted-foreground mt-0.5">{user?.email || 'ananya.sharma@example.com'}</p>
+              <h3 className="text-base font-extrabold text-teal-950">{user?.name || 'Saarthi User'}</h3>
+              <p className="text-xs font-semibold text-muted-foreground mt-0.5">{user?.username || 'Profile identity unavailable'}</p>
             </div>
             
             {/* Registered SMS Notification Alert */}
@@ -109,11 +136,11 @@ function UserProfile({ user, onUpdateUser }) {
             <div className="grid grid-cols-2 gap-4 w-full pt-3 border-t border-teal-50 text-left">
               <div>
                 <span className="text-[10px] uppercase font-extrabold text-teal-650">Age</span>
-                <p className="text-xs font-extrabold text-teal-950">{user?.age || '26'} Years</p>
+                <p className="text-xs font-extrabold text-teal-950">{user?.age ? `${user.age} Years` : 'Not provided'}</p>
               </div>
               <div>
                 <span className="text-[10px] uppercase font-extrabold text-teal-650">Location</span>
-                <p className="text-xs font-extrabold text-teal-800 truncate">{user?.location || 'Bhopal, MP'}</p>
+                <p className="text-xs font-extrabold text-teal-800 truncate">{user?.location || 'Not provided'}</p>
               </div>
             </div>
           </div>
@@ -259,6 +286,15 @@ function UserProfile({ user, onUpdateUser }) {
             </h4>
 
             <div className="space-y-2.5 max-h-[250px] overflow-y-auto pr-1">
+              {appointmentsLoading && (
+                <p className="text-xs text-muted-foreground">Loading appointments from Saarthi...</p>
+              )}
+              {appointmentsError && (
+                <p className="text-xs text-rose-700">{appointmentsError}</p>
+              )}
+              {!appointmentsLoading && !appointmentsError && appointments.length === 0 && (
+                <p className="text-xs text-muted-foreground">No appointments are stored for this account.</p>
+              )}
               {appointments.map((appt) => (
                 <div key={appt.id} className="p-3.5 bg-white border border-teal-100/60 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                   <div className="space-y-0.5">
@@ -266,7 +302,7 @@ function UserProfile({ user, onUpdateUser }) {
                       <span className="text-[9px] font-extrabold uppercase bg-teal-50 text-teal-800 border border-teal-150/40 px-1.5 py-0.5 rounded">
                         {appt.id}
                       </span>
-                      <span className="text-xs font-extrabold text-emerald-700">
+                      <span className="text-xs font-extrabold text-amber-700">
                         {appt.status}
                       </span>
                     </div>
@@ -275,14 +311,7 @@ function UserProfile({ user, onUpdateUser }) {
                   </div>
 
                   <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 border-teal-50 pt-2 sm:pt-0">
-                    <span className="text-xs font-extrabold text-teal-950">Fee Paid: ₹{appt.fee}</span>
-                    <button 
-                      onClick={() => clearAppointment(appt.id)}
-                      className="p-1.5 hover:bg-rose-50 text-rose-600 rounded transition-colors cursor-pointer"
-                      title="Cancel Slot"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <span className="text-xs font-extrabold text-teal-950">Demo amount: ₹{appt.fee}</span>
                   </div>
                 </div>
               ))}

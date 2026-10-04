@@ -48,24 +48,24 @@ function CareCircle({ isLoggedIn, onRequireAuth }) {
     });
     setInputMsg('');
 
-    // Simulate Realistic Peer & Medical Advisor Auto Response
+    // Simulated local response for the portfolio UI; no real peer or clinician is contacted.
     setIsTyping(true);
     setTimeout(() => {
       setIsTyping(false);
-      let replyText = "Thank you for sharing! Always ensure you consult a verified gynecologist for persistent symptoms.";
+      let replyText = "Demo response: track persistent symptoms and discuss them with a qualified healthcare professional.";
       
       const lower = userText.toLowerCase();
       if (lower.includes('pcos') || lower.includes('cycle') || lower.includes('period')) {
-        replyText = "Dr. Ananya (Health Guide): For cycle regulation and PCOS management, combining low GI meals with daily 30-min walking is clinically proven to improve insulin sensitivity.";
+        replyText = "Demo wellness prompt: record cycle patterns and ask a qualified professional about appropriate nutrition and activity.";
       } else if (lower.includes('pain') || lower.includes('cramp')) {
-        replyText = "Pooja (Peer Advisor): Gentle heating pads and chamomile tea really help me manage severe cramps! If pain persists, check SymptoScan AI.";
+        replyText = "Demo wellness prompt: record pain severity and seek professional care if it is severe or persistent.";
       } else if (lower.includes('pregnant') || lower.includes('maternity')) {
-        replyText = "Dr. Priya (Maternity Specialist): Ensure regular folic acid & iron intake as prescribed by your doctor. Hydration is key!";
+        replyText = "Demo wellness prompt: discuss supplements and pregnancy symptoms with your own qualified clinician.";
       }
 
       const replyMsg = {
         id: Date.now() + 1,
-        sender: replyText.startsWith("Dr.") ? "Dr. Ananya (Certified Guide)" : "Pooja (Community Advisor)",
+        sender: "Automated Demo Response",
         text: replyText,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         isMe: false
@@ -84,11 +84,11 @@ function CareCircle({ isLoggedIn, onRequireAuth }) {
       {/* Header */}
       <div className="bg-white border border-[#ECE8F5] rounded-[20px] p-6 md:p-8 space-y-2 shadow-xs">
         <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-[#6D5BD0] bg-[#B6A8F8]/15 px-3 py-1 rounded-full border border-[#B6A8F8]/30">
-          💬 Safe Anonymous Peer & Specialist Forum
+          💬 Simulated Community Interface
         </span>
-        <h2 className="font-outfit text-2xl sm:text-3xl font-black text-[#2D2A4A]">CareCircle Peer & Specialist Community</h2>
+        <h2 className="font-outfit text-2xl sm:text-3xl font-black text-[#2D2A4A]">CareCircle UI Demonstration</h2>
         <p className="text-xs sm:text-sm text-[#5F6473] leading-relaxed">
-          Anonymous chat rooms for peer discussions on PCOD, maternity care, and mental wellness.
+          Local simulated conversations; no live peers, specialists, moderation, or messaging backend are connected.
         </p>
       </div>
 
@@ -120,7 +120,7 @@ function CareCircle({ isLoggedIn, onRequireAuth }) {
 
           <div className="flex gap-2 p-3 bg-[#F5F3FA] text-[#2D2A4A] rounded-xl border border-[#ECE8F5] text-[11px] items-start">
             <ShieldAlert className="w-3.5 h-3.5 shrink-0 text-[#6D5BD0] mt-0.5" />
-            <p>All conversations are fully encrypted & anonymous. Treat every member with empathy and respect.</p>
+            <p>Demo content only. Messages remain in component memory and are not sent to real participants.</p>
           </div>
         </div>
 
