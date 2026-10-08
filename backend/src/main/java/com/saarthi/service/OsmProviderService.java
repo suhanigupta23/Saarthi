@@ -18,7 +18,11 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
+import javax.net.ssl.SSLHandshakeException;
+import java.net.ConnectException;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -26,6 +30,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -90,11 +95,12 @@ public class OsmProviderService {
     }
 
     static FailureDiagnostic classifyFailure(Throwable failure) {
-        String exceptionName = failure == null ? "none" : failure.getClass().getSimpleName();
+        String outerExceptionName = failure == null ? "none" : failure.getClass().getSimpleName();
 
         for (Throwable current = failure; current != null; current = current.getCause()) {
             if (current instanceof InterruptedException) {
-                return new FailureDiagnostic(FailureReason.INTERRUPTED, "none", exceptionName);
+                return new FailureDiagnostic(
+                        FailureReason.INTERRUPTED, "none", current.getClass().getSimpleName());
             }
         }
 
@@ -106,7 +112,8 @@ public class OsmProviderService {
                         : status >= 500 && status <= 599
                                 ? FailureReason.HTTP_5XX
                                 : FailureReason.UNEXPECTED;
-                return new FailureDiagnostic(reason, Integer.toString(status), exceptionName);
+                return new FailureDiagnostic(
+                        reason, Integer.toString(status), current.getClass().getSimpleName());
             }
         }
 
@@ -114,7 +121,28 @@ public class OsmProviderService {
             if (current instanceof SocketTimeoutException
                     || current.getClass().getSimpleName().contains("Timeout")) {
                 return new FailureDiagnostic(
-                        FailureReason.CONNECT_OR_READ_TIMEOUT, "none", exceptionName);
+                        FailureReason.CONNECT_OR_READ_TIMEOUT,
+                        "none",
+                        current.getClass().getSimpleName());
+            }
+        }
+
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof UnknownHostException) {
+                return new FailureDiagnostic(
+                        FailureReason.DNS_FAILURE, "none", current.getClass().getSimpleName());
+            }
+            if (current instanceof SSLHandshakeException) {
+                return new FailureDiagnostic(
+                        FailureReason.TLS_HANDSHAKE_FAILURE, "none", current.getClass().getSimpleName());
+            }
+            if (current instanceof ConnectException) {
+                return new FailureDiagnostic(
+                        FailureReason.CONNECTION_REFUSED, "none", current.getClass().getSimpleName());
+            }
+            if (isConnectionReset(current)) {
+                return new FailureDiagnostic(
+                        FailureReason.CONNECTION_RESET, "none", current.getClass().getSimpleName());
             }
         }
 
@@ -123,23 +151,35 @@ public class OsmProviderService {
                     || current instanceof HttpMessageConversionException
                     || current instanceof OsmProviderException
                     && "Overpass returned an unexpected response".equals(current.getMessage())) {
-                return new FailureDiagnostic(FailureReason.RESPONSE_SHAPE, "none", exceptionName);
+                return new FailureDiagnostic(
+                        FailureReason.RESPONSE_SHAPE, "none", current.getClass().getSimpleName());
             }
         }
 
         for (Throwable current = failure; current != null; current = current.getCause()) {
             if (current instanceof ResourceAccessException || current instanceof RestClientException) {
-                return new FailureDiagnostic(FailureReason.TRANSPORT_FAILURE, "none", exceptionName);
+                return new FailureDiagnostic(
+                        FailureReason.TRANSPORT_FAILURE, "none", current.getClass().getSimpleName());
             }
         }
 
-        return new FailureDiagnostic(FailureReason.UNEXPECTED, "none", exceptionName);
+        return new FailureDiagnostic(FailureReason.UNEXPECTED, "none", outerExceptionName);
+    }
+
+    private static boolean isConnectionReset(Throwable failure) {
+        return failure instanceof SocketException
+                && failure.getMessage() != null
+                && failure.getMessage().toLowerCase(Locale.ROOT).contains("connection reset");
     }
 
     enum FailureReason {
         HTTP_429,
         HTTP_5XX,
         CONNECT_OR_READ_TIMEOUT,
+        DNS_FAILURE,
+        TLS_HANDSHAKE_FAILURE,
+        CONNECTION_REFUSED,
+        CONNECTION_RESET,
         TRANSPORT_FAILURE,
         RESPONSE_SHAPE,
         INTERRUPTED,

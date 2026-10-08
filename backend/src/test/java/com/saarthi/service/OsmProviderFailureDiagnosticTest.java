@@ -16,8 +16,12 @@ import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
+import javax.net.ssl.SSLHandshakeException;
+import java.io.IOException;
 import java.net.ConnectException;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
@@ -79,15 +83,71 @@ class OsmProviderFailureDiagnosticTest {
         CapturedFailure captured = captureFailure(upstream);
 
         assertEquals(
-                "OSM_PROVIDER_FAILURE reason=CONNECT_OR_READ_TIMEOUT httpStatus=none exception=ResourceAccessException",
+                "OSM_PROVIDER_FAILURE reason=CONNECT_OR_READ_TIMEOUT httpStatus=none exception=SocketTimeoutException",
                 captured.logMessage());
     }
 
     @Test
-    void classifiesTransportFailure() {
+    void classifiesDnsFailure() {
+        RuntimeException upstream = new ResourceAccessException(
+                PRIVATE_CONTENT,
+                new UnknownHostException(PRIVATE_CONTENT)
+        );
+
+        CapturedFailure captured = captureFailure(upstream);
+
+        assertEquals(
+                "OSM_PROVIDER_FAILURE reason=DNS_FAILURE httpStatus=none exception=UnknownHostException",
+                captured.logMessage());
+    }
+
+    @Test
+    void classifiesTlsHandshakeFailure() {
+        RuntimeException upstream = new ResourceAccessException(
+                PRIVATE_CONTENT,
+                new SSLHandshakeException(PRIVATE_CONTENT)
+        );
+
+        CapturedFailure captured = captureFailure(upstream);
+
+        assertEquals(
+                "OSM_PROVIDER_FAILURE reason=TLS_HANDSHAKE_FAILURE httpStatus=none exception=SSLHandshakeException",
+                captured.logMessage());
+    }
+
+    @Test
+    void classifiesConnectionRefused() {
         RuntimeException upstream = new ResourceAccessException(
                 PRIVATE_CONTENT,
                 new ConnectException(PRIVATE_CONTENT)
+        );
+
+        CapturedFailure captured = captureFailure(upstream);
+
+        assertEquals(
+                "OSM_PROVIDER_FAILURE reason=CONNECTION_REFUSED httpStatus=none exception=ConnectException",
+                captured.logMessage());
+    }
+
+    @Test
+    void classifiesConnectionResetWithoutLoggingSocketMessage() {
+        RuntimeException upstream = new ResourceAccessException(
+                PRIVATE_CONTENT,
+                new SocketException("Connection reset: " + PRIVATE_CONTENT)
+        );
+
+        CapturedFailure captured = captureFailure(upstream);
+
+        assertEquals(
+                "OSM_PROVIDER_FAILURE reason=CONNECTION_RESET httpStatus=none exception=SocketException",
+                captured.logMessage());
+    }
+
+    @Test
+    void retainsGenericTransportCategoryForOtherIoFailures() {
+        RuntimeException upstream = new ResourceAccessException(
+                PRIVATE_CONTENT,
+                new IOException(PRIVATE_CONTENT)
         );
 
         CapturedFailure captured = captureFailure(upstream);
@@ -121,7 +181,7 @@ class OsmProviderFailureDiagnosticTest {
         CapturedFailure captured = captureFailure(upstream);
 
         assertEquals(
-                "OSM_PROVIDER_FAILURE reason=INTERRUPTED httpStatus=none exception=OsmProviderException",
+                "OSM_PROVIDER_FAILURE reason=INTERRUPTED httpStatus=none exception=InterruptedException",
                 captured.logMessage());
     }
 
