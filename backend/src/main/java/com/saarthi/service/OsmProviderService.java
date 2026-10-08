@@ -9,10 +9,16 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageConversionException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
+import java.net.SocketTimeoutException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -27,6 +33,7 @@ import java.util.stream.Collectors;
 @Service
 public class OsmProviderService {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(OsmProviderService.class);
     static final String USER_AGENT = "Saarthi-Student-Portfolio/1.0 (https://github.com/suhanigupta23/Saarthi)";
 
     private final RestTemplate restTemplate;
@@ -60,21 +67,86 @@ public class OsmProviderService {
             double userLng,
             double radiusKm,
             String specialty) {
-
-        String query = buildQuery(userLat, userLng, radiusKm, specialty);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
-        headers.set(HttpHeaders.USER_AGENT, USER_AGENT);
-
-        String body = "data=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
-
         try {
+            String query = buildQuery(userLat, userLng, radiusKm, specialty);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+            headers.set(HttpHeaders.USER_AGENT, USER_AGENT);
+
+            String body = "data=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
             ResponseEntity<Map> response = executeRateLimitedRequest(body, headers);
             return mapResponse(response.getBody(), userLat, userLng, radiusKm);
-        } catch (RestClientException | ClassCastException exception) {
-            throw new OsmProviderException("Overpass request failed", exception);
+        } catch (RuntimeException exception) {
+            FailureDiagnostic diagnostic = classifyFailure(exception);
+            LOGGER.warn("OSM_PROVIDER_FAILURE reason={} httpStatus={} exception={}",
+                    diagnostic.reason(), diagnostic.httpStatus(), diagnostic.exceptionName());
+
+            if (exception instanceof RestClientException || exception instanceof ClassCastException) {
+                throw new OsmProviderException("Overpass request failed", exception);
+            }
+            throw exception;
         }
+    }
+
+    static FailureDiagnostic classifyFailure(Throwable failure) {
+        String exceptionName = failure == null ? "none" : failure.getClass().getSimpleName();
+
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof InterruptedException) {
+                return new FailureDiagnostic(FailureReason.INTERRUPTED, "none", exceptionName);
+            }
+        }
+
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof HttpStatusCodeException httpFailure) {
+                int status = httpFailure.getStatusCode().value();
+                FailureReason reason = status == 429
+                        ? FailureReason.HTTP_429
+                        : status >= 500 && status <= 599
+                                ? FailureReason.HTTP_5XX
+                                : FailureReason.UNEXPECTED;
+                return new FailureDiagnostic(reason, Integer.toString(status), exceptionName);
+            }
+        }
+
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof SocketTimeoutException
+                    || current.getClass().getSimpleName().contains("Timeout")) {
+                return new FailureDiagnostic(
+                        FailureReason.CONNECT_OR_READ_TIMEOUT, "none", exceptionName);
+            }
+        }
+
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof ClassCastException
+                    || current instanceof HttpMessageConversionException
+                    || current instanceof OsmProviderException
+                    && "Overpass returned an unexpected response".equals(current.getMessage())) {
+                return new FailureDiagnostic(FailureReason.RESPONSE_SHAPE, "none", exceptionName);
+            }
+        }
+
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof ResourceAccessException || current instanceof RestClientException) {
+                return new FailureDiagnostic(FailureReason.TRANSPORT_FAILURE, "none", exceptionName);
+            }
+        }
+
+        return new FailureDiagnostic(FailureReason.UNEXPECTED, "none", exceptionName);
+    }
+
+    enum FailureReason {
+        HTTP_429,
+        HTTP_5XX,
+        CONNECT_OR_READ_TIMEOUT,
+        TRANSPORT_FAILURE,
+        RESPONSE_SHAPE,
+        INTERRUPTED,
+        UNEXPECTED
+    }
+
+    record FailureDiagnostic(FailureReason reason, String httpStatus, String exceptionName) {
     }
 
     private String buildQuery(double latitude, double longitude, double radiusKm, String specialty) {
