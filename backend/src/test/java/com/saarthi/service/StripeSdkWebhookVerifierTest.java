@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class StripeSdkWebhookVerifierTest {
 
-    private static final String SECRET = "whsec_test_signing_secret";
+    private static final String SECRET = "unit-test-webhook-signing-key";
     private static final String PAYLOAD = """
             {
               "id":"evt_signed_123",
