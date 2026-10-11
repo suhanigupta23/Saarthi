@@ -58,6 +58,7 @@ class GeoapifyProviderServiceTest {
         assertEquals("Near Women's Clinic", results.get(0).name());
         assertTrue(results.get(0).providerId().startsWith("geoapify:"));
         assertFalse(results.get(0).outsideRequestedRadius());
+        assertEquals("EXACT_CATEGORY", results.get(0).matchClassification());
         server.verify();
     }
 
@@ -93,8 +94,15 @@ class GeoapifyProviderServiceTest {
         MockRestServiceServer server = MockRestServiceServer.bindTo(template).build();
         for (int radius : List.of(10_000, 25_000, 50_000)) {
             server.expect(once(), requestTo(ENDPOINT))
+                    .andExpect(jsonPath("$.categories[0]").value("healthcare.clinic_or_praxis.gynaecology"))
                     .andExpect(jsonPath("$.filter.lat").value(28.6139))
                     .andExpect(jsonPath("$.filter.lon").value(77.2090))
+                    .andExpect(jsonPath("$.filter.radius").value(radius))
+                    .andRespond(withSuccess("{\"type\":\"FeatureCollection\",\"features\":[]}", MediaType.APPLICATION_JSON));
+        }
+        for (int radius : List.of(10_000, 25_000, 50_000)) {
+            server.expect(once(), requestTo(ENDPOINT))
+                    .andExpect(jsonPath("$.categories[0]").value("healthcare"))
                     .andExpect(jsonPath("$.filter.radius").value(radius))
                     .andRespond(withSuccess("{\"type\":\"FeatureCollection\",\"features\":[]}", MediaType.APPLICATION_JSON));
         }
@@ -123,6 +131,75 @@ class GeoapifyProviderServiceTest {
         assertEquals(1, results.size());
         assertEquals("City Maternity Hospital", results.get(0).name());
         assertEquals("Maternity-related healthcare", results.get(0).specialty());
+        assertEquals("NAME_SUPPORTED_RELATED", results.get(0).matchClassification());
+        server.verify();
+    }
+
+    @Test
+    void fallsBackToNamedGeneralHealthcareAndKeepsDistanceOrdering() {
+        RestTemplate template = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(template).build();
+        server.expect(once(), requestTo(ENDPOINT))
+                .andExpect(jsonPath("$.categories[0]").value("healthcare.clinic_or_praxis.gynaecology"))
+                .andExpect(jsonPath("$.filter.radius").value(25000))
+                .andRespond(withSuccess("{\"type\":\"FeatureCollection\",\"features\":[]}", MediaType.APPLICATION_JSON));
+        server.expect(once(), requestTo(ENDPOINT))
+                .andExpect(jsonPath("$.categories[0]").value("healthcare.clinic_or_praxis.gynaecology"))
+                .andExpect(jsonPath("$.filter.radius").value(50000))
+                .andRespond(withSuccess("{\"type\":\"FeatureCollection\",\"features\":[]}", MediaType.APPLICATION_JSON));
+        server.expect(once(), requestTo(ENDPOINT))
+                .andExpect(jsonPath("$.categories[0]").value("healthcare"))
+                .andExpect(jsonPath("$.name").doesNotExist())
+                .andExpect(jsonPath("$.filter.radius").value(25000))
+                .andRespond(withSuccess(featureCollection(
+                        feature("far-general", "District Hospital", 77.4220, 23.2700, "healthcare.hospital"),
+                        feature("near-general", "Community Health Centre", 77.4127, 23.2600,
+                                "healthcare.clinic_or_praxis"),
+                        feature("not-healthcare", "Unrelated Place", 77.4128, 23.2601, "commercial")
+                ), MediaType.APPLICATION_JSON));
+
+        List<DoctorPlaceResponse> results = service(template, API_KEY)
+                .searchNearbyProviders(23.2599, 77.4126, 25, "gyno");
+
+        assertEquals(2, results.size());
+        assertEquals("Community Health Centre", results.get(0).name());
+        assertEquals("District Hospital", results.get(1).name());
+        assertTrue(results.stream().allMatch(
+                result -> "GENERAL_HEALTHCARE".equals(result.matchClassification())));
+        assertTrue(results.stream().allMatch(result ->
+                "General healthcare — requested specialty not verified".equals(result.specialty())));
+        server.verify();
+    }
+
+    @Test
+    void generalHealthcareFallbackRemainsBoundedAtFiftyKilometres() {
+        RestTemplate template = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(template).build();
+        for (int radius : List.of(25_000, 50_000)) {
+            server.expect(once(), requestTo(ENDPOINT))
+                    .andExpect(jsonPath("$.categories[0]").value("healthcare.clinic_or_praxis.gynaecology"))
+                    .andExpect(jsonPath("$.filter.radius").value(radius))
+                    .andRespond(withSuccess("{\"type\":\"FeatureCollection\",\"features\":[]}", MediaType.APPLICATION_JSON));
+        }
+        server.expect(once(), requestTo(ENDPOINT))
+                .andExpect(jsonPath("$.categories[0]").value("healthcare"))
+                .andExpect(jsonPath("$.filter.radius").value(25000))
+                .andRespond(withSuccess("{\"type\":\"FeatureCollection\",\"features\":[]}", MediaType.APPLICATION_JSON));
+        server.expect(once(), requestTo(ENDPOINT))
+                .andExpect(jsonPath("$.categories[0]").value("healthcare"))
+                .andExpect(jsonPath("$.filter.radius").value(50000))
+                .andRespond(withSuccess(featureCollection(
+                        feature("regional", "Regional Health Centre", 77.7126, 23.2599,
+                                "healthcare.clinic_or_praxis")), MediaType.APPLICATION_JSON));
+
+        List<DoctorPlaceResponse> results = service(template, API_KEY)
+                .searchNearbyProviders(23.2599, 77.4126, 25, "gyno");
+
+        assertEquals(1, results.size());
+        assertTrue(results.get(0).distanceKm() > 25);
+        assertTrue(results.get(0).distanceKm() <= 50);
+        assertTrue(results.get(0).outsideRequestedRadius());
+        assertEquals("GENERAL_HEALTHCARE", results.get(0).matchClassification());
         server.verify();
     }
 

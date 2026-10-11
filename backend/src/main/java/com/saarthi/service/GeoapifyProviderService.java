@@ -40,6 +40,9 @@ public class GeoapifyProviderService {
     static final String USER_AGENT = "Saarthi-Student-Portfolio/1.0 (https://github.com/suhanigupta23/Saarthi)";
     static final double MAX_FALLBACK_RADIUS_KM = 50.0;
     private static final int RESULT_LIMIT = 20;
+    private static final String EXACT_CATEGORY = "EXACT_CATEGORY";
+    private static final String NAME_SUPPORTED_RELATED = "NAME_SUPPORTED_RELATED";
+    private static final String GENERAL_HEALTHCARE = "GENERAL_HEALTHCARE";
     private static final Pattern MATERNITY_NAME = Pattern.compile(
             "(?i).*(maternity|maternal|obstetric|mother\\s*(?:&|and|-)?\\s*child|women'?s\\s+(?:hospital|clinic)).*");
 
@@ -85,9 +88,18 @@ public class GeoapifyProviderService {
                 throw new GeoapifyProviderException("Geoapify API key is not configured", null);
             }
 
-            for (double radiusKm : searchRadii(requestedRadiusKm)) {
+            List<Double> radii = searchRadii(requestedRadiusKm);
+            for (double radiusKm : radii) {
                 List<DoctorPlaceResponse> providers = executeSearch(
-                        userLat, userLng, radiusKm, requestedRadiusKm, specialty);
+                        userLat, userLng, radiusKm, requestedRadiusKm, specialty, false);
+                if (!providers.isEmpty()) {
+                    return providers;
+                }
+            }
+
+            for (double radiusKm : radii) {
+                List<DoctorPlaceResponse> providers = executeSearch(
+                        userLat, userLng, radiusKm, requestedRadiusKm, specialty, true);
                 if (!providers.isEmpty()) {
                     return providers;
                 }
@@ -122,25 +134,30 @@ public class GeoapifyProviderService {
             double userLng,
             double radiusKm,
             double requestedRadiusKm,
-            String specialty) {
+            String specialty,
+            boolean generalHealthcareFallback) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
         headers.set(HttpHeaders.USER_AGENT, USER_AGENT);
         headers.set("x-api-key", apiKey);
 
-        Map<String, Object> body = buildRequest(userLat, userLng, radiusKm, specialty);
+        Map<String, Object> body = buildRequest(
+                userLat, userLng, radiusKm, specialty, generalHealthcareFallback);
         ResponseEntity<Map> response = executeRateLimitedRequest(body, headers);
-        return mapResponse(response.getBody(), userLat, userLng, radiusKm, requestedRadiusKm, specialty);
+        return mapResponse(response.getBody(), userLat, userLng, radiusKm, requestedRadiusKm,
+                specialty, generalHealthcareFallback);
     }
 
     private Map<String, Object> buildRequest(
             double latitude,
             double longitude,
             double radiusKm,
-            String specialty) {
+            String specialty,
+            boolean generalHealthcareFallback) {
         Map<String, Object> request = new LinkedHashMap<>();
-        request.put("categories", List.of(categoryFor(specialty)));
+        request.put("categories", List.of(
+                generalHealthcareFallback ? "healthcare" : categoryFor(specialty)));
         request.put("filter", Map.of(
                 "type", "circle",
                 "lon", longitude,
@@ -149,7 +166,7 @@ public class GeoapifyProviderService {
         request.put("bias", Map.of("type", "proximity", "lon", longitude, "lat", latitude));
         request.put("limit", RESULT_LIMIT);
         request.put("lang", "en");
-        if ("maternity".equals(specialty)) {
+        if (!generalHealthcareFallback && "maternity".equals(specialty)) {
             request.put("name", "maternity");
         }
         return request;
@@ -190,7 +207,8 @@ public class GeoapifyProviderService {
             double userLng,
             double searchRadiusKm,
             double requestedRadiusKm,
-            String requestedSpecialty) {
+            String requestedSpecialty,
+            boolean generalHealthcareFallback) {
         if (response == null || !(response.get("features") instanceof List<?> features)) {
             throw new GeoapifyProviderException("Geoapify returned an unexpected response", null);
         }
@@ -210,8 +228,11 @@ public class GeoapifyProviderService {
             Double latitude = coordinates.size() > 1 ? numberValue(coordinates.get(1)) : null;
             Set<String> categories = stringSet(properties.get("categories"));
 
+            boolean specialtyMatch = matchesSpecialty(name, categories, requestedSpecialty);
+            boolean healthcareListing = categories.stream().anyMatch(value -> value.startsWith("healthcare"));
             if (rawPlaceId == null || name == null || latitude == null || longitude == null
-                    || !matchesSpecialty(name, categories, requestedSpecialty)) {
+                    || (generalHealthcareFallback && !healthcareListing)
+                    || (!generalHealthcareFallback && !specialtyMatch)) {
                 continue;
             }
 
@@ -221,6 +242,11 @@ public class GeoapifyProviderService {
             }
 
             String providerId = "geoapify:" + sha256(rawPlaceId);
+            String matchClassification = generalHealthcareFallback
+                    ? GENERAL_HEALTHCARE
+                    : "maternity".equals(requestedSpecialty)
+                    ? NAME_SUPPORTED_RELATED
+                    : EXACT_CATEGORY;
             DoctorPlaceResponse provider = new DoctorPlaceResponse(
                     providerId,
                     name,
@@ -229,11 +255,14 @@ public class GeoapifyProviderService {
                     longitude,
                     Math.round(distanceKm * 10.0) / 10.0,
                     providerType(categories),
-                    specialtyLabel(requestedSpecialty),
+                    generalHealthcareFallback
+                            ? "General healthcare — requested specialty not verified"
+                            : specialtyLabel(requestedSpecialty),
                     findString(properties, Set.of("phone", "mobile", "contact:phone")),
                     findString(properties, Set.of("website", "contact:website")),
                     null,
-                    distanceKm > requestedRadiusKm);
+                    distanceKm > requestedRadiusKm,
+                    matchClassification);
             unique.putIfAbsent(providerId, provider);
         }
 

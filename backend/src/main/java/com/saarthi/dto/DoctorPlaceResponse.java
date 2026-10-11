@@ -12,7 +12,8 @@ public record DoctorPlaceResponse(
         String phone,
         String website,
         String osmUrl,
-        boolean outsideRequestedRadius
+        boolean outsideRequestedRadius,
+        String matchClassification
 ) {
     public DoctorPlaceResponse(
             String providerId,
@@ -27,6 +28,6 @@ public record DoctorPlaceResponse(
             String website,
             String osmUrl) {
         this(providerId, name, address, latitude, longitude, distanceKm, providerType,
-                specialty, phone, website, osmUrl, false);
+                specialty, phone, website, osmUrl, false, "EXACT_CATEGORY");
     }
 }

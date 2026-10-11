@@ -298,11 +298,17 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
           website: d.website?.startsWith('http://') || d.website?.startsWith('https://') ? d.website : null,
           osmUrl: d.osmUrl,
           outsideRequestedRadius: Boolean(d.outsideRequestedRadius),
+          matchClassification: d.matchClassification,
           searchCategory: specialtyLabel
         }));
         setDoctors(mapped);
         setDoctorResultSource('geoapify');
-        setDoctorResultNotice(mapped.some(provider => provider.outsideRequestedRadius)
+        const showingGeneralHealthcare = mapped.some(
+          provider => provider.matchClassification === 'GENERAL_HEALTHCARE'
+        );
+        setDoctorResultNotice(showingGeneralHealthcare
+          ? 'No verified match for the requested specialty was found. Showing genuine nearby general healthcare facilities; their requested specialty is not verified.'
+          : mapped.some(provider => provider.outsideRequestedRadius)
           ? 'No matching providers were found within 25 km. Showing specialty-matched healthcare facilities farther away within the bounded 50 km fallback. Distances are shown on each card.'
           : 'Healthcare listings returned by Geoapify using OpenStreetMap data. Listings are not Saarthi-verified providers.');
       } else {
@@ -1023,6 +1029,16 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
             
             {/* Left Side: Doctor Cards List (Spans 5 columns) */}
             <div className="lg:col-span-5 space-y-5.5 max-h-[580px] overflow-y-auto pr-2.5">
+              {doctors.some(doc => doc.matchClassification === 'GENERAL_HEALTHCARE') && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                  <p className="text-xs font-extrabold text-amber-900">
+                    Nearby healthcare facilities — requested specialty not verified.
+                  </p>
+                  <p className="mt-1 text-[10px] text-amber-800">
+                    These are real Geoapify/OSM healthcare listings, but their data does not confirm the specialty you selected.
+                  </p>
+                </div>
+              )}
               {doctors.map((doc) => {
                 const isHovered = hoveredDoctorId === doc.id;
                 const isSelectedOnMap = selectedMapDoctor?.id === doc.id;
@@ -1044,7 +1060,11 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                           <User className="w-4.5 h-4.5 text-teal-800" />
                         </div>
                         <span className="text-[9px] font-bold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-100 px-2 py-1 rounded-full">
-                          Geoapify / OSM listing
+                          {doc.matchClassification === 'GENERAL_HEALTHCARE'
+                            ? 'General healthcare — specialty not verified'
+                            : doc.matchClassification === 'NAME_SUPPORTED_RELATED'
+                              ? 'Name-supported related listing'
+                              : 'Exact Geoapify specialty category'}
                         </span>
                       </div>
 
