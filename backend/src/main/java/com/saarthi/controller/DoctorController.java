@@ -2,7 +2,7 @@ package com.saarthi.controller;
 
 import com.saarthi.dto.DoctorPlaceResponse;
 import com.saarthi.exception.InvalidApiRequestException;
-import com.saarthi.service.OsmProviderService;
+import com.saarthi.service.GeoapifyProviderService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -17,10 +17,10 @@ import java.util.Set;
 public class DoctorController {
 
     private static final Set<String> SUPPORTED_SPECIALTIES = Set.of("gyno", "maternity", "psychologist");
-    private final OsmProviderService osmProviderService;
+    private final GeoapifyProviderService providerService;
 
-    public DoctorController(OsmProviderService osmProviderService) {
-        this.osmProviderService = osmProviderService;
+    public DoctorController(GeoapifyProviderService providerService) {
+        this.providerService = providerService;
     }
 
     @GetMapping("/gynecologists")
@@ -42,7 +42,7 @@ public class DoctorController {
             throw new InvalidApiRequestException("Unsupported specialty");
         }
 
-        List<DoctorPlaceResponse> providers = osmProviderService.searchNearbyProviders(
+        List<DoctorPlaceResponse> providers = providerService.searchNearbyProviders(
                 lat, lng, radius_km, normalizedSpecialty
         );
         return ResponseEntity.ok(providers);

@@ -1,7 +1,7 @@
 package com.saarthi.controller;
 
 import com.saarthi.dto.DoctorPlaceResponse;
-import com.saarthi.service.OsmProviderService;
+import com.saarthi.service.GeoapifyProviderService;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpStatus;
@@ -19,11 +19,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class DoctorControllerTest {
 
-    private final StubOsmProviderService providerService = new StubOsmProviderService();
+    private final StubGeoapifyProviderService providerService = new StubGeoapifyProviderService();
     private final DoctorController controller = new DoctorController(providerService);
 
     @Test
-    void returnsMappedOsmProviderDtos() {
+    void returnsMappedProviderDtos() {
         DoctorPlaceResponse provider = new DoctorPlaceResponse(
                 "node/123", "Bhopal Women's Clinic", "Bhopal, MP",
                 23.2599, 77.4126, 0.4,
@@ -51,10 +51,10 @@ class DoctorControllerTest {
     }
 
     @Test
-    void returnsBadGatewayWhenOverpassFails() {
-        providerService.failure = new OsmProviderService.OsmProviderException("Overpass failed", null);
+    void propagatesGeoapifyFailureForGlobalHandling() {
+        providerService.failure = new GeoapifyProviderService.GeoapifyProviderException("Geoapify failed", null);
 
-        assertThrows(OsmProviderService.OsmProviderException.class,
+        assertThrows(GeoapifyProviderService.GeoapifyProviderException.class,
                 () -> controller.getNearbyGynecologists(23, 77, 25, "gyno"));
     }
 
@@ -85,7 +85,7 @@ class DoctorControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
-    private static class StubOsmProviderService extends OsmProviderService {
+    private static class StubGeoapifyProviderService extends GeoapifyProviderService {
         private List<DoctorPlaceResponse> response = List.of();
         private RuntimeException failure;
         private double latitude;
@@ -93,8 +93,8 @@ class DoctorControllerTest {
         private double radiusKm;
         private String specialty;
 
-        private StubOsmProviderService() {
-            super(new RestTemplateBuilder(), "https://example.test/overpass");
+        private StubGeoapifyProviderService() {
+            super(new RestTemplateBuilder(), "https://example.test/places", "test-api-key");
         }
 
         @Override

@@ -69,8 +69,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
     } else if (norm.includes('mumbai')) {
       return { lat: 19.0760, lng: 72.8777, bbox: '72.8000,19.0000,72.9500,19.1500' };
     }
-    // Default Gwalior
-    return { lat: 26.2183, lng: 78.1828, bbox: '78.1000,26.1500,78.2500,26.2800' };
+    return null;
   };
 
   // WebRTC & Call states
@@ -118,7 +117,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
     const matchedDoc = doctors.find(d => d.providerId === paymentModalData.providerId);
     const docName = paymentModalData.doctorName;
     const docSpec = matchedDoc?.speciality || matchedDoc?.searchCategory || 'Healthcare provider';
-    const clinic = matchedDoc?.address || matchedDoc?.name || 'OpenStreetMap provider';
+    const clinic = matchedDoc?.address || matchedDoc?.name || 'mapped healthcare provider';
     const feeAmt = paymentModalData.amount;
     const dateStr = new Date().toISOString().slice(0, 10);
     const token = localStorage.getItem('saarthi_token');
@@ -236,19 +235,26 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
     const specialtyLabel = specialtyKey === 'maternity'
       ? 'Maternity provider'
       : specialtyKey === 'psychologist'
-        ? 'Perinatal psychologist'
+        ? 'Psychiatry / mental health provider'
         : 'Gynecologist';
 
     setDoctors([]);
     setDoctorResultSource('loading');
-    setDoctorResultNotice('Searching OpenStreetMap for nearby healthcare providers...');
+    setDoctorResultNotice('Searching Geoapify for nearby healthcare providers...');
 
     // Prefer coordinates supplied by the current GPS callback. React state may still
     // contain the previous location immediately after setLocation runs.
     const cityCoordinates = getCityCoordinates(city);
-    const latitude = customCoords?.lat ?? location?.lat ?? cityCoordinates.lat;
-    const longitude = customCoords?.lng ?? location?.lng ?? cityCoordinates.lng;
+    const latitude = customCoords?.lat ?? location?.lat ?? cityCoordinates?.lat;
+    const longitude = customCoords?.lng ?? location?.lng ?? cityCoordinates?.lng;
     const token = localStorage.getItem('saarthi_token');
+
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      setErrorMsg('No reliable coordinates are available for this saved city. Please allow GPS access.');
+      setDoctorResultSource('error');
+      setDoctorResultNotice('Provider search was not attempted because Saarthi will not substitute another city.');
+      return;
+    }
 
     if (!token) {
       setErrorMsg('Your session is missing. Please sign in again to search the doctor catalogue.');
@@ -291,25 +297,28 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
           phone: d.phone,
           website: d.website?.startsWith('http://') || d.website?.startsWith('https://') ? d.website : null,
           osmUrl: d.osmUrl,
+          outsideRequestedRadius: Boolean(d.outsideRequestedRadius),
           searchCategory: specialtyLabel
         }));
         setDoctors(mapped);
-        setDoctorResultSource('osm');
-        setDoctorResultNotice('Nearby healthcare records from OpenStreetMap. Listings are community-maintained and not Saarthi-verified.');
+        setDoctorResultSource('geoapify');
+        setDoctorResultNotice(mapped.some(provider => provider.outsideRequestedRadius)
+          ? 'No matching providers were found within 25 km. Showing specialty-matched healthcare facilities farther away within the bounded 50 km fallback. Distances are shown on each card.'
+          : 'Healthcare listings returned by Geoapify using OpenStreetMap data. Listings are not Saarthi-verified providers.');
       } else {
         setDoctorResultSource('empty');
-        setDoctorResultNotice('OpenStreetMap returned no matching providers within 25 km.');
+        setDoctorResultNotice('Geoapify returned no confidently matched providers within the bounded 50 km search area.');
       }
     } catch (e) {
-      console.warn("OpenStreetMap provider search failed: ", e);
+      console.warn("Geoapify provider search failed: ", e);
       setDoctors([]);
       setDoctorResultSource('error');
       if (e.message === 'AUTHENTICATION_REQUIRED') {
         setErrorMsg('Your session could not be authenticated. Please sign in again.');
-        setDoctorResultNotice('OpenStreetMap results are unavailable because backend authentication failed.');
+        setDoctorResultNotice('Provider results are unavailable because backend authentication failed.');
       } else {
         setErrorMsg(e.message || 'The nearby provider search is currently unavailable.');
-        setDoctorResultNotice('No provider cards are shown because the OpenStreetMap search failed.');
+        setDoctorResultNotice('No provider cards are shown because the Geoapify search failed.');
       }
     }
   };
@@ -705,7 +714,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
       } else if (currentProgress < 75) {
         setScanStatusText('📍 Detecting address and location details...');
       } else if (currentProgress < 100) {
-        setScanStatusText('🔍 Searching nearby OpenStreetMap healthcare records...');
+        setScanStatusText('🔍 Searching nearby Geoapify healthcare listings...');
       } else {
         clearInterval(interval);
         setTimeout(() => {
@@ -745,7 +754,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
             <div className="space-y-2">
               <h3 className="text-xl font-black text-warm-850">GPS Location Access Required</h3>
               <p className="text-sm font-semibold text-warm-500 leading-relaxed">
-                Saarthi GynConnect uses GPS coordinates to search nearby community-maintained OpenStreetMap healthcare records.
+                Saarthi GynConnect uses GPS coordinates to search Geoapify healthcare listings based on OpenStreetMap data.
               </p>
             </div>
             <div className="flex gap-4 pt-2">
@@ -814,11 +823,11 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
       <div className="bg-white border border-[#ECE8F5] rounded-[20px] p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xs text-left">
         <div className="space-y-2 max-w-xl">
           <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-[#3B826E] bg-[#A9D8C8]/20 px-3 py-1 rounded-full border border-[#A9D8C8]/30">
-            🩺 OpenStreetMap Discovery & Demo Telehealth
+            🩺 Geoapify Provider Discovery & Demo Telehealth
           </span>
           <h2 className="font-outfit text-2xl sm:text-3xl font-black text-[#2D2A4A]">GynConnect Telehealth</h2>
           <p className="text-xs sm:text-sm text-[#5F6473] leading-relaxed">
-            Explore nearby healthcare records returned through OpenStreetMap's Overpass service.
+            Explore healthcare facilities returned by Geoapify from your selected location and specialty.
           </p>
           {activeSection !== 'onboarding' && (
             <button 
@@ -842,7 +851,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
       {appointmentSaved && (
         <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl text-xs sm:text-sm font-bold flex gap-2 items-center leading-relaxed text-left animate-in slide-in-from-top duration-300">
           <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-          <span>Appointment saved in Saarthi. Payment remains unverified, and the OpenStreetMap-listed provider does not receive it automatically.</span>
+          <span>Appointment saved in Saarthi. Payment remains unverified, and the externally listed provider does not receive it automatically.</span>
         </div>
       )}
 
@@ -872,7 +881,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
           <div className="text-center space-y-2">
             <div className="w-14 h-14 bg-[#B6A8F8]/15 text-[#6D5BD0] rounded-full flex items-center justify-center text-3xl mx-auto border border-[#B6A8F8]/30">🩺</div>
             <h3 className="text-2xl sm:text-3xl font-black text-[#2D2A4A] font-outfit">Specify Your Consult Requirements</h3>
-            <p className="text-xs sm:text-sm font-normal text-[#5F6473]">Select what type of care you need to search nearby OpenStreetMap records.</p>
+            <p className="text-xs sm:text-sm font-normal text-[#5F6473]">Select what type of care you need to search real Geoapify healthcare listings.</p>
           </div>
 
           {/* Specialty selections */}
@@ -920,8 +929,8 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
               >
                 <div className="w-9 h-9 rounded-xl bg-white text-[#6D5BD0] flex items-center justify-center text-lg font-bold border border-[#ECE8F5]">🧠</div>
                 <div>
-                  <h4 className="font-extrabold text-sm text-[#2D2A4A]">Maternity Psychologist</h4>
-                  <p className="text-xs font-normal text-[#5F6473] mt-1">Postpartum depression support and mental health.</p>
+                  <h4 className="font-extrabold text-sm text-[#2D2A4A]">Psychiatry / Mental Health</h4>
+                  <p className="text-xs font-normal text-[#5F6473] mt-1">Psychiatry-category facilities; these are not claimed to be psychologists.</p>
                 </div>
               </button>
 
@@ -1000,7 +1009,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
 
           {doctorResultNotice && (
             <div className={`rounded-xl border px-4 py-3 text-xs font-semibold ${
-              doctorResultSource === 'osm'
+              doctorResultSource === 'geoapify'
                 ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                 : doctorResultSource === 'error'
                   ? 'border-rose-200 bg-rose-50 text-rose-800'
@@ -1035,7 +1044,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                           <User className="w-4.5 h-4.5 text-teal-800" />
                         </div>
                         <span className="text-[9px] font-bold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-100 px-2 py-1 rounded-full">
-                          OSM record
+                          Geoapify / OSM listing
                         </span>
                       </div>
 
@@ -1048,8 +1057,11 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                         )}
                         {doc.speciality && (
                           <p className="text-[10px] text-[#5F6473] mt-1">
-                            OSM specialty: {doc.speciality.replaceAll(';', ', ').replaceAll('_', ' ')}
+                            Mapped specialty: {doc.speciality.replaceAll(';', ', ').replaceAll('_', ' ')}
                           </p>
+                        )}
+                        {doc.outsideRequestedRadius && (
+                          <p className="text-[10px] font-bold text-amber-700 mt-1">Outside the original 25 km radius</p>
                         )}
                         {doc.address && <p className="text-xs text-muted-foreground mt-1">{doc.address}</p>}
                         {doc.phone && <p className="text-[10px] text-[#5F6473] mt-1">Phone: {doc.phone}</p>}
@@ -1082,7 +1094,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                         className="w-full py-2 bg-white hover:bg-[#F5F3FA] text-[#2D2A4A] rounded-xl font-bold text-[11px] border border-[#6D5BD0] transition-colors text-center flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <MapPin className="w-3.5 h-3.5 text-[#6D5BD0]" />
-                        <span>Show on OpenStreetMap</span>
+                        <span>Show on map</span>
                       </button>
                       {doc.osmUrl && (
                         <a
@@ -1091,7 +1103,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                           rel="noreferrer"
                           className="block text-center text-[10px] font-bold text-[#5F6473] hover:text-[#2D2A4A] underline"
                         >
-                          Open exact OSM record
+                          Open source OSM record
                         </a>
                       )}
                     </div>
@@ -1104,8 +1116,15 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
             <div className="lg:col-span-7 relative bg-white border border-[#ECE8F5] rounded-[24px] overflow-hidden min-h-[500px] shadow-xs flex flex-col justify-between">
               {(() => {
                 const cityCoords = getCityCoordinates(locationName);
-                const mapLat = selectedMapDoctor?.latitude ?? location?.lat ?? cityCoords.lat;
-                const mapLng = selectedMapDoctor?.longitude ?? location?.lng ?? cityCoords.lng;
+                const mapLat = selectedMapDoctor?.latitude ?? location?.lat ?? cityCoords?.lat;
+                const mapLng = selectedMapDoctor?.longitude ?? location?.lng ?? cityCoords?.lng;
+                if (!Number.isFinite(mapLat) || !Number.isFinite(mapLng)) {
+                  return (
+                    <div className="min-h-[500px] flex items-center justify-center p-8 text-center text-sm text-[#5F6473]">
+                      Allow GPS access to display provider locations on the map.
+                    </div>
+                  );
+                }
                 const delta = 0.015;
                 const bbox = `${mapLng - delta},${mapLat - delta},${mapLng + delta},${mapLat + delta}`;
                 return (
@@ -1128,6 +1147,10 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                 <span>•</span>
                 <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">
                   © OpenStreetMap contributors
+                </a>
+                <span>•</span>
+                <a href="https://www.geoapify.com/" target="_blank" rel="noreferrer" className="underline">
+                  Powered by Geoapify
                 </a>
               </div>
 
@@ -1341,7 +1364,7 @@ function GynConnect({ isLoggedIn, onRequireAuth, onNavigateTab }) {
                 <CheckCircle2 className="w-10 h-10 text-[#3B826E] mx-auto animate-bounce" />
                 <h4 className="font-outfit font-extrabold text-[#2D2A4A] text-sm">Appointment Saved</h4>
                 <p className="text-xs text-[#5F6473] leading-relaxed">
-                  The appointment is pending payment verification. This does not create a booking in the OpenStreetMap-listed provider's scheduling system.
+                  The appointment is pending payment verification. This does not create a booking in the externally listed provider's scheduling system.
                 </p>
               </div>
             ) : (

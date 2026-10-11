@@ -2,7 +2,7 @@ package com.saarthi.exception;
 
 import com.saarthi.dto.CreateCheckoutRequest;
 import com.saarthi.service.AppointmentService;
-import com.saarthi.service.OsmProviderService;
+import com.saarthi.service.GeoapifyProviderService;
 import com.saarthi.service.PaymentService;
 import jakarta.validation.Valid;
 import org.junit.jupiter.api.BeforeEach;
@@ -84,8 +84,8 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.status").value(502))
                 .andExpect(jsonPath("$.message")
-                        .value("OpenStreetMap provider search is temporarily unavailable"))
-                .andExpect(content().string(not(containsString("overpass-internal"))));
+                        .value("Nearby healthcare provider search is temporarily unavailable"))
+                .andExpect(content().string(not(containsString("geoapify-internal"))));
     }
 
     @Test
@@ -135,8 +135,8 @@ class GlobalExceptionHandlerTest {
 
         @GetMapping("/upstream")
         void upstream() {
-            throw new OsmProviderService.OsmProviderException(
-                    "overpass-internal host failed", new RuntimeException("private endpoint"));
+            throw new GeoapifyProviderService.GeoapifyProviderException(
+                    "geoapify-internal host failed", new RuntimeException("private endpoint"));
         }
 
         @GetMapping("/forbidden")

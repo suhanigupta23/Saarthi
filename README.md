@@ -10,7 +10,7 @@
 [![Stripe](https://img.shields.io/badge/Stripe-Checkout-635BFF?logo=stripe&logoColor=white)](https://stripe.com/)
 [![WebRTC](https://img.shields.io/badge/WebRTC-P2P_Media-333333?logo=webrtc&logoColor=white)](https://webrtc.org/)
 
-Saarthi explores how several healthcare-support workflows can live in one application without presenting AI output as a diagnosis or public map records as verified clinicians. The core backend persists users, appointments, cycle logs, vitals, and processed Stripe events in PostgreSQL. It also integrates OpenStreetMap/Overpass, Gemini, Stripe, and a custom WebSocket signaling server.
+Saarthi explores how several healthcare-support workflows can live in one application without presenting AI output as a diagnosis or public map records as verified clinicians. The core backend persists users, appointments, cycle logs, vitals, and processed Stripe events in PostgreSQL. It also integrates Geoapify/OpenStreetMap data, Gemini, Stripe, and a custom WebSocket signaling server.
 
 The project is intentionally scoped as a technically working student/demo system. Provider participation, production telemedicine operations, and clinical validation are outside its current scope.
 
@@ -27,9 +27,10 @@ The project is intentionally scoped as a technically working student/demo system
 ### Nearby provider discovery
 
 - Reads browser GPS coordinates and sends them to the authenticated Spring Boot API.
-- Queries OpenStreetMap healthcare points of interest through the Overpass API.
-- Normalizes node, way, and relation results into a small API DTO, calculates distance on the backend, enforces the requested radius, and sorts nearest first.
-- Displays matching provider cards and Leaflet/OpenStreetMap markers from the same OSM records.
+- Queries Geoapify Places for real healthcare listings based on the user's coordinates and selected specialty.
+- Keeps the user-selected radius at no more than 25 km, then uses a server-controlled 50 km fallback around the same coordinates only when the initial search is empty.
+- Applies strict specialty evidence, normalizes results into a small API DTO, calculates distance on the backend, deduplicates, and sorts nearest first.
+- Displays matching provider cards and an OpenStreetMap view for the selected listing.
 - Does not invent ratings, availability, opening hours, or provider-supplied fees.
 
 ### Appointments and demo payments
@@ -64,7 +65,7 @@ flowchart TB
     B["Browser B<br/>React + Vite"]
     API["Spring Boot API<br/>Security · Validation · Services"]
     DB[("PostgreSQL<br/>JPA persistence")]
-    OSM["OpenStreetMap<br/>Overpass API"]
+    OSM["Geoapify Places<br/>OpenStreetMap data"]
     GEMINI["Gemini API"]
     STRIPE["Stripe Checkout<br/>and Webhooks"]
 
@@ -75,7 +76,7 @@ flowchart TB
     A <-->|"WebRTC audio/video<br/>peer-to-peer"| B
 
     API <-->|"Spring Data JPA"| DB
-    API -->|"Healthcare POI query"| OSM
+    API -->|"Healthcare places query"| OSM
     API -->|"Symptom-guidance request"| GEMINI
     API -->|"Create Checkout Session"| STRIPE
     STRIPE -->|"Signed webhook"| API
@@ -91,13 +92,13 @@ The React SPA uses JWT-protected REST APIs for application data and a raw WebSoc
 flowchart LR
     GPS["Browser geolocation"] --> COORDS["Latitude + longitude"]
     COORDS --> API["Authenticated provider API"]
-    API --> OVERPASS["Overpass healthcare POI query"]
-    OVERPASS --> NORMALIZE["Normalize OSM records"]
-    NORMALIZE --> FILTER["Calculate distance<br/>filter radius · nearest first"]
+    API --> GEOAPIFY["Geoapify Places query"]
+    GEOAPIFY --> NORMALIZE["Normalize external listings"]
+    NORMALIZE --> FILTER["Specialty evidence · deduplicate<br/>distance · nearest first"]
     FILTER --> UI["React cards + OSM map"]
 ```
 
-The returned providers are OSM records. Saarthi preserves genuine available fields such as name, address, coordinates, contact tags, and OSM URL; missing commercial data is not fabricated.
+The returned entries are Geoapify healthcare listings derived from OpenStreetMap and other configured Geoapify data sources. Saarthi preserves genuine available fields such as name, address, coordinates, phone, and website; missing commercial data is not fabricated. If the initial radius is empty, the backend may expand to 50 km around the same GPS point and marks results outside the requested radius.
 
 ### Appointment and Stripe lifecycle
 
@@ -199,7 +200,7 @@ Saarthi's core data is relational: a user owns appointments, cycle logs, and vit
 | Backend | Java 17, Spring Boot 3.1 | REST APIs, validation, business logic, and integrations |
 | Security | Spring Security, JWT, BCrypt | Username/password authentication and protected APIs |
 | Persistence | PostgreSQL, Spring Data JPA | Users, appointments, cycle logs, vitals, and Stripe event records |
-| Provider discovery | OpenStreetMap, Overpass API | Nearby healthcare POI lookup without a paid API key |
+| Provider discovery | Geoapify Places API, OpenStreetMap | Coordinate-based healthcare listing lookup on Geoapify's free tier |
 | AI resilience | Gemini API, Resilience4j | Educational symptom guidance, circuit breaker, and fallback |
 | Payments | Stripe Java SDK | Checkout Sessions, signed webhooks, and reconciliation |
 | Real-time | Spring WebSocket, browser WebRTC | Appointment-room signaling and peer-to-peer media |
@@ -290,7 +291,8 @@ The API starts at `http://localhost:8080` by default. The application currently 
 | `STRIPE_API_SECRET_KEY` | Optional | Required for live Stripe Checkout creation |
 | `STRIPE_WEBHOOK_SECRET` | Optional | Required to verify live Stripe webhooks |
 | `FRONTEND_BASE_URL` | Optional | Stripe success/cancel redirect base URL |
-| `OSM_OVERPASS_URL` | Optional | Replaces the default public Overpass endpoint |
+| `GEOAPIFY_API_KEY` | Provider feature | Backend-only Geoapify Places API key |
+| `GEOAPIFY_PLACES_URL` | Optional | Overrides the default Geoapify Places endpoint (normally leave unchanged) |
 
 Never commit a populated `.env` file or expose backend secrets through Vite variables.
 
@@ -319,11 +321,11 @@ cd ../frontend
 npm run build
 ```
 
-The final backend suite completed with **57 tests, 0 failures, 0 errors, and 0 skipped tests**. The Maven package and Vite production build also completed successfully.
+The final backend suite completed with **64 tests, 0 failures, 0 errors, and 0 skipped tests**. The Maven package and Vite production build also completed successfully.
 
 ## Current Scope and Honest Limitations
 
-- OSM providers are discovery records, not verified or registered Saarthi clinician accounts; listed providers do not receive Saarthi bookings or payments.
+- Geoapify/OSM providers are discovery records, not verified or registered Saarthi clinician accounts; listed providers do not receive Saarthi bookings or payments.
 - Video consultation is a two-authenticated-session demonstration. Real browser-to-browser camera/audio transport still requires deployed manual verification.
 - STUN is configured, but TURN is not; calls may fail on restrictive networks.
 - Signaling rooms live in one backend instance's memory and are not horizontally distributed.
@@ -342,4 +344,4 @@ The final backend suite completed with **57 tests, 0 failures, 0 errors, and 0 s
 
 ## Attribution
 
-Provider and map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright). External integrations remain subject to their providers' terms and availability.
+Provider search is [powered by Geoapify](https://www.geoapify.com/) and map data is © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright). External integrations remain subject to their providers' terms and availability.

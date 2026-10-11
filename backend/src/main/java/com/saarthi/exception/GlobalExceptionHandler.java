@@ -2,7 +2,7 @@ package com.saarthi.exception;
 
 import com.saarthi.dto.ApiErrorResponse;
 import com.saarthi.service.AppointmentService;
-import com.saarthi.service.OsmProviderService;
+import com.saarthi.service.GeoapifyProviderService;
 import com.saarthi.service.PaymentService;
 import com.saarthi.service.StripeWebhookVerifier;
 import jakarta.servlet.http.HttpServletRequest;
@@ -121,11 +121,11 @@ public class GlobalExceptionHandler {
         return response(HttpStatus.BAD_GATEWAY, "Stripe Checkout is temporarily unavailable", request);
     }
 
-    @ExceptionHandler(OsmProviderService.OsmProviderException.class)
+    @ExceptionHandler(GeoapifyProviderService.GeoapifyProviderException.class)
     public ResponseEntity<ApiErrorResponse> handleProviderFailure(
-            OsmProviderService.OsmProviderException exception,
+            GeoapifyProviderService.GeoapifyProviderException exception,
             HttpServletRequest request) {
-        return response(HttpStatus.BAD_GATEWAY, "OpenStreetMap provider search is temporarily unavailable", request);
+        return response(HttpStatus.BAD_GATEWAY, "Nearby healthcare provider search is temporarily unavailable", request);
     }
 
     @ExceptionHandler(Exception.class)

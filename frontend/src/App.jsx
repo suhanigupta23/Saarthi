@@ -254,7 +254,7 @@ function App() {
       id: 'gynconnect',
       icon: Heart,
       title: "GynConnect",
-      description: "Explore nearby OpenStreetMap healthcare listings and try Saarthi's appointment and WebRTC demo flow."
+      description: "Explore Geoapify healthcare listings based on OpenStreetMap data and try Saarthi's appointment and WebRTC demo flow."
     },
     {
       id: 'vault',
@@ -660,7 +660,7 @@ function App() {
                       },
                       {
                         q: "How does the GPS clinic locator work?",
-                        a: "GynConnect sends browser coordinates to the backend, which searches community-maintained OpenStreetMap data through Overpass. Results are nearby listings, not certified or Saarthi-verified specialists."
+                        a: "GynConnect sends browser coordinates to the backend, which searches Geoapify healthcare listings based on OpenStreetMap data. Results are external facilities, not certified or Saarthi-verified specialists."
                       },
                       {
                         q: "How are video calls and consultations secured?",
