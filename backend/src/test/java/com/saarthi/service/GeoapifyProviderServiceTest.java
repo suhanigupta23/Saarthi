@@ -38,7 +38,9 @@ class GeoapifyProviderServiceTest {
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(header("x-api-key", API_KEY))
                 .andExpect(header("User-Agent", GeoapifyProviderService.USER_AGENT))
-                .andExpect(jsonPath("$.categories").value("healthcare.clinic_or_praxis.gynaecology"))
+                .andExpect(jsonPath("$.categories").isArray())
+                .andExpect(jsonPath("$.categories.length()").value(1))
+                .andExpect(jsonPath("$.categories[0]").value("healthcare.clinic_or_praxis.gynaecology"))
                 .andExpect(jsonPath("$.filter.radius").value(25000))
                 .andRespond(withSuccess(featureCollection(
                         feature("near", "Near Women's Clinic", 77.4127, 23.2600,
@@ -107,7 +109,8 @@ class GeoapifyProviderServiceTest {
         RestTemplate template = new RestTemplate();
         MockRestServiceServer server = MockRestServiceServer.bindTo(template).build();
         server.expect(requestTo(ENDPOINT))
-                .andExpect(jsonPath("$.categories").value("healthcare"))
+                .andExpect(jsonPath("$.categories").isArray())
+                .andExpect(jsonPath("$.categories[0]").value("healthcare"))
                 .andExpect(jsonPath("$.name").value("maternity"))
                 .andRespond(withSuccess(featureCollection(
                         feature("maternity", "City Maternity Hospital", 77.4127, 23.2600, "healthcare.hospital"),
@@ -128,7 +131,8 @@ class GeoapifyProviderServiceTest {
         RestTemplate template = new RestTemplate();
         MockRestServiceServer server = MockRestServiceServer.bindTo(template).build();
         server.expect(requestTo(ENDPOINT))
-                .andExpect(jsonPath("$.categories").value("healthcare.clinic_or_praxis.psychiatry"))
+                .andExpect(jsonPath("$.categories").isArray())
+                .andExpect(jsonPath("$.categories[0]").value("healthcare.clinic_or_praxis.psychiatry"))
                 .andRespond(withSuccess(featureCollection(
                         feature("psychiatry", "Mental Health Centre", 77.4127, 23.2600,
                                 "healthcare.clinic_or_praxis.psychiatry")), MediaType.APPLICATION_JSON));

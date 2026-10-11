@@ -140,7 +140,7 @@ public class GeoapifyProviderService {
             double radiusKm,
             String specialty) {
         Map<String, Object> request = new LinkedHashMap<>();
-        request.put("categories", categoryFor(specialty));
+        request.put("categories", List.of(categoryFor(specialty)));
         request.put("filter", Map.of(
                 "type", "circle",
                 "lon", longitude,
